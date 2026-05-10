@@ -1,167 +1,231 @@
-# Patient Gateway
+# PatientGateway
 
-This application was generated using JHipster 8.3.0, you can find documentation and help at [https://www.jhipster.tech/documentation-archive/v8.3.0](https://www.jhipster.tech/documentation-archive/v8.3.0).
+Reactive Spring Cloud Gateway for user authentication, user administration, service routing, and a small Kafka bridge. The codebase is built with Spring Boot 3, Spring WebFlux, Spring Security JWT, MongoDB, Consul, Kafka, and Mongock.
 
-This is a "gateway" application intended to be part of a microservice architecture, please refer to the [Doing microservices with JHipster][] page of the documentation for more information.
+## What is implemented
 
-This application is configured for Service Discovery and Configuration with Consul. On launch, it will refuse to start if it is not able to connect to Consul at [http://localhost:8500](http://localhost:8500). For more information, read our documentation on [Service Discovery and Configuration with Consul][].
+- **JWT authentication** via `/api/authenticate`
+- **Self-service account flows** for registration, activation, profile updates, password changes, and password reset
+- **Admin user management** via `/api/admin/users`
+- **Authority management** via `/api/authorities`
+- **Public user listing** via `/api/users`
+- **Gateway route inspection** via `/api/gateway/routes`
+- **Service proxying** through `/services/{serviceId}/**`
+- **Kafka publish/consume endpoints** via `/api/patient-gateway-kafka`
+- **Mongo bootstrap data** created by Mongock on startup
 
-## Project Structure
+There is **no generated frontend app** in this repository. The main resources under `src/main/resources` are configuration, i18n bundles, and mail templates.
 
-Node is required for generation and recommended for development. `package.json` is always generated for a better development experience with prettier, commit hooks, scripts and so on.
+## Runtime defaults
 
-In the project root, JHipster generates configuration files for tools like git, prettier, eslint, husky, and others that are well known and you can find references in the web.
+- **Application port:** `5503`
+- **Spring application name:** `patientGateway`
+- **Consul:** `http://localhost:8500`
+- **MongoDB:** `mongodb://localhost:27017/patientGateway`
+- **Kafka broker:** `localhost:9092`
+- **API docs:** enabled when the `api-docs` profile is active
+- **Management base path:** `/management`
 
-`/src/*` structure follows default Java structure.
+The app is configured to use **Consul for discovery/config** and will not start cleanly in normal operation if Consul is unavailable. In prod bootstrap config, Consul config is `fail-fast: true`.
 
-- `.yo-rc.json` - Yeoman configuration file
-  JHipster configuration is stored in this file at `generator-jhipster` key. You may find `generator-jhipster-*` for specific blueprints configuration.
-- `.yo-resolve` (optional) - Yeoman conflict resolver
-  Allows to use a specific action when conflicts are found skipping prompts for files that matches a pattern. Each line should match `[pattern] [action]` with pattern been a [Minimatch](https://github.com/isaacs/minimatch#minimatch) pattern and action been one of skip (default if omitted) or force. Lines starting with `#` are considered comments and are ignored.
-- `.jhipster/*.json` - JHipster entity configuration files
-- `/src/main/docker` - Docker configurations for the application and services that the application depends on
+## Routing and security behavior
 
-## Development
+- Spring Cloud Gateway discovery locator is enabled.
+- Discovered services are exposed as:
+  - `/services/{serviceId}/**`
+- Gateway routing rewrites proxied paths to:
+  - `/{remaining}`
+- The default gateway filter is **`JWTRelay`**, which forwards validated bearer tokens to downstream services.
 
-To start your application in the dev profile, run:
+Security rules in `SecurityConfiguration` currently allow anonymous access to:
 
-```
+- `/api/authenticate`
+- `/api/register`
+- `/api/activate`
+- `/api/account/reset-password/init`
+- `/api/account/reset-password/finish`
+- `/management/health`
+- `/management/health/**`
+- `/management/info`
+- `/management/prometheus`
+- `/services/*/management/health/readiness`
+
+Admin authority is required for:
+
+- `/api/admin/**`
+- `/v3/api-docs/**`
+- `/services/*/v3/api-docs`
+- `/management/**` except the public endpoints above
+
+All other `/api/**` and `/services/**` routes require authentication.
+
+## Seed data
+
+On an empty MongoDB database, `InitialSetupMigration` creates:
+
+- authorities: `ROLE_USER`, `ROLE_ADMIN`
+- users:
+  - `admin` with `ROLE_ADMIN` and `ROLE_USER`
+  - `user` with `ROLE_USER`
+
+Both seeded users are activated and created by `system`.
+
+## Main HTTP endpoints
+
+### Authentication and account
+
+- `POST /api/authenticate`
+- `GET /api/authenticate`
+- `POST /api/register`
+- `GET /api/activate?key=...`
+- `GET /api/account`
+- `POST /api/account`
+- `POST /api/account/change-password`
+- `POST /api/account/reset-password/init`
+- `POST /api/account/reset-password/finish`
+
+### User and authority administration
+
+- `GET /api/users`
+- `POST /api/authorities`
+- `GET /api/authorities`
+- `GET /api/authorities/{id}`
+- `DELETE /api/authorities/{id}`
+- `POST /api/admin/users`
+- `PUT /api/admin/users`
+- `PUT /api/admin/users/{login}`
+- `GET /api/admin/users`
+- `GET /api/admin/users/{login}`
+- `DELETE /api/admin/users/{login}`
+
+### Gateway and Kafka
+
+- `GET /api/gateway/routes`
+- `POST /api/patient-gateway-kafka/publish?message=...`
+- `GET /api/patient-gateway-kafka/consume`
+
+## Local development
+
+Start the app with the default profile setup:
+
+```bash
 ./mvnw
 ```
 
-For further instructions on how to develop with JHipster, have a look at [Using JHipster in development][].
+Equivalent npm script:
 
-## Building for production
-
-### Packaging as jar
-
-To build the final jar and optimize the patientGateway application for production, run:
-
+```bash
+npm run app:start
 ```
+
+The default dev setup expects local Consul, MongoDB, and Kafka.
+
+### Start dependencies with Docker
+
+Start everything required by the gateway:
+
+```bash
+npm run services:up
+```
+
+Or start services individually:
+
+```bash
+npm run docker:consul:up
+npm run docker:db:up
+npm run docker:kafka:up
+```
+
+Compose files live in `src/main/docker/`.
+
+## Build and packaging
+
+Build a production jar:
+
+```bash
 ./mvnw -Pprod clean verify
 ```
 
-To ensure everything worked, run:
+Build a production war:
 
-```
-java -jar target/*.jar
-```
-
-Refer to [Using JHipster in production][] for more details.
-
-### Packaging as war
-
-To package your application as a war in order to deploy it to an application server, run:
-
-```
+```bash
 ./mvnw -Pprod,war clean verify
 ```
 
-### JHipster Control Center
+Useful npm wrappers:
 
-JHipster Control Center can help you manage and control your application(s). You can start a local control center server (accessible on http://localhost:7419) with:
-
-```
-docker compose -f src/main/docker/jhipster-control-center.yml up
-```
-
-## Testing
-
-### Spring Boot tests
-
-To launch your application's tests, run:
-
-```
-./mvnw verify
+```bash
+npm run java:jar:prod
+npm run java:war:prod
 ```
 
-## Others
+## Docker image and containerized app
 
-### Code quality using Sonar
+Build the application image:
 
-Sonar is used to analyse code quality. You can start a local Sonar server (accessible on http://localhost:9001) with:
-
-```
-docker compose -f src/main/docker/sonar.yml up -d
-```
-
-Note: we have turned off forced authentication redirect for UI in [src/main/docker/sonar.yml](src/main/docker/sonar.yml) for out of the box experience while trying out SonarQube, for real use cases turn it back on.
-
-You can run a Sonar analysis with using the [sonar-scanner](https://docs.sonarqube.org/display/SCAN/Analyzing+with+SonarQube+Scanner) or by using the maven plugin.
-
-Then, run a Sonar analysis:
-
-```
-./mvnw -Pprod clean verify sonar:sonar -Dsonar.login=admin -Dsonar.password=admin
-```
-
-If you need to re-run the Sonar phase, please be sure to specify at least the `initialize` phase since Sonar properties are loaded from the sonar-project.properties file.
-
-```
-./mvnw initialize sonar:sonar -Dsonar.login=admin -Dsonar.password=admin
-```
-
-Additionally, Instead of passing `sonar.password` and `sonar.login` as CLI arguments, these parameters can be configured from [sonar-project.properties](sonar-project.properties) as shown below:
-
-```
-sonar.login=admin
-sonar.password=admin
-```
-
-For more information, refer to the [Code quality page][].
-
-### Using Docker to simplify development (optional)
-
-You can use Docker to improve your JHipster development experience. A number of docker-compose configuration are available in the [src/main/docker](src/main/docker) folder to launch required third party services.
-
-For example, to start a mongodb database in a docker container, run:
-
-```
-docker compose -f src/main/docker/mongodb.yml up -d
-```
-
-To stop it and remove the container, run:
-
-```
-docker compose -f src/main/docker/mongodb.yml down
-```
-
-You can also fully dockerize your application and all the services that it depends on.
-To achieve this, first build a docker image of your app by running:
-
-```
+```bash
 npm run java:docker
 ```
 
-Or build a arm64 docker image when using an arm64 processor os like MacOS with M1 processor family running:
+Start the containerized app with its dependencies:
 
-```
-npm run java:docker:arm64
-```
-
-Then run:
-
-```
+```bash
 docker compose -f src/main/docker/app.yml up -d
 ```
 
-When running Docker Desktop on MacOS Big Sur or later, consider enabling experimental `Use the new Virtualization framework` for better processing performance ([disk access performance is worse](https://github.com/docker/roadmap/issues/7)).
+The app container runs with:
 
-For more information refer to [Using Docker and Docker-Compose][], this page also contains information on the docker-compose sub-generator (`jhipster docker-compose`), which is able to generate docker configurations for one or several JHipster applications.
+- `SPRING_PROFILES_ACTIVE=prod,api-docs`
+- MongoDB wired to `mongodb:27017`
+- Consul wired to `consul:8500`
+- Kafka wired to `kafka:9092`
 
-## Continuous Integration (optional)
+## Testing
 
-To configure CI for your project, run the ci-cd sub-generator (`jhipster ci-cd`), this will let you generate configuration files for a number of Continuous Integration systems. Consult the [Setting up Continuous Integration][] page for more information.
+Run the full Maven verification:
 
-[JHipster Homepage and latest documentation]: https://www.jhipster.tech
-[JHipster 8.3.0 archive]: https://www.jhipster.tech/documentation-archive/v8.3.0
-[Doing microservices with JHipster]: https://www.jhipster.tech/documentation-archive/v8.3.0/microservices-architecture/
-[Using JHipster in development]: https://www.jhipster.tech/documentation-archive/v8.3.0/development/
-[Service Discovery and Configuration with Consul]: https://www.jhipster.tech/documentation-archive/v8.3.0/microservices-architecture/#consul
-[Using Docker and Docker-Compose]: https://www.jhipster.tech/documentation-archive/v8.3.0/docker-compose
-[Using JHipster in production]: https://www.jhipster.tech/documentation-archive/v8.3.0/production/
-[Running tests page]: https://www.jhipster.tech/documentation-archive/v8.3.0/running-tests/
-[Code quality page]: https://www.jhipster.tech/documentation-archive/v8.3.0/code-quality/
-[Setting up Continuous Integration]: https://www.jhipster.tech/documentation-archive/v8.3.0/setting-up-ci/
-[Node.js]: https://nodejs.org/
-[NPM]: https://www.npmjs.com/
+```bash
+./mvnw verify
+```
+
+Or use the existing npm wrapper:
+
+```bash
+npm run backend:unit:test
+```
+
+Additional checks:
+
+```bash
+npm run backend:nohttp:test
+npm run backend:doc:test
+npm run prettier:check
+```
+
+## API docs and observability
+
+When the `api-docs` profile is active:
+
+- OpenAPI docs are available under `/v3/api-docs`
+- Swagger UI assets are enabled by the springdoc dependency
+
+Management endpoints are served under `/management`, including:
+
+- `/management/health`
+- `/management/info`
+- `/management/prometheus`
+- `/management/gateway`
+
+## Optional supporting tools
+
+The repository also contains Docker definitions for:
+
+- JHipster Control Center: `src/main/docker/jhipster-control-center.yml`
+- SonarQube: `src/main/docker/sonar.yml`
+- Zipkin: `src/main/docker/zipkin.yml`
+- Monitoring stack: `src/main/docker/monitoring.yml`
+
+## References
+
+- JHipster 8.3.0 docs: <https://www.jhipster.tech/documentation-archive/v8.3.0>
+- Spring Cloud Gateway docs: <https://docs.spring.io/spring-cloud-gateway/reference/>

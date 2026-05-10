@@ -74,6 +74,8 @@ public class SecurityConfiguration {
                 authz ->
                     // prettier-ignore
                 authz
+                    .pathMatchers("/", "/index.html").permitAll()
+                    .pathMatchers("/*.js", "/*.css", "/*.html", "/*.ico").permitAll()
                     .pathMatchers("/api/authenticate").permitAll()
                     .pathMatchers("/api/register").permitAll()
                     .pathMatchers("/api/activate").permitAll()

@@ -7,8 +7,8 @@
     <artifactId>hc-patient-gateway</artifactId>
     <version>0.0.1</version>
     <packaging>jar</packaging>
-    <name>Admin Gateway</name>
-    <description>Admin Authentication Gateway</description>
+    <name>PatientGateway</name>
+    <description>PatientGateway</description>
 
     <properties>
         <!--
@@ -16,13 +16,13 @@
             The spring-boot version should match the one managed by https://mvnrepository.com/artifact/tech.jhipster/jhipster-dependencies/${jhipster-dependencies.version}
         -->
         <maven.version>3.2.5</maven.version>
-        <java.version>17</java.version>
+        <java.version>26</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <maven.build.timestamp.format>yyyyMMddHHmmss</maven.build.timestamp.format>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
-        <start-class>net.jojoaddison.patientGatewayApp</start-class>
+        <start-class>net.jojoaddison.PatientGatewayApp</start-class>
         <argLine>-Djava.security.egd=file:/dev/./urandom -Xmx1G</argLine>
         <m2e.apt.activation>jdt_apt</m2e.apt.activation>
         <run.addResources>false</run.addResources>
@@ -584,8 +584,8 @@
                                 <version>[${maven.version},)</version>
                             </requireMavenVersion>
                             <requireJavaVersion>
-                                <message>You are running an incompatible version of Java. JHipster supports JDK 17 to 21.</message>
-                                <version>[17,18),[18,19),[19,20),[20,21),[21,22)</version>
+                                <message>You are running an incompatible version of Java. JHipster supports JDK ${java.version}.</message>
+                                <version>[17,18),[18,19),[19,20),[20,21),[21,26)</version>
                             </requireJavaVersion>
                         </rules>
                     </configuration>

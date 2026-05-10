@@ -11,15 +11,15 @@ import reactor.core.publisher.Mono;
 
 @RestController
 @RequestMapping("/api/patient-gateway-kafka")
-public class AdminGatewayKafkaResource {
+public class PatientGatewayKafkaResource {
 
     private static final String PRODUCER_BINDING_NAME = "binding-out-0";
 
-    private final Logger log = LoggerFactory.getLogger(AdminGatewayKafkaResource.class);
+    private final Logger log = LoggerFactory.getLogger(PatientGatewayKafkaResource.class);
     private final KafkaConsumer kafkaConsumer;
     private final StreamBridge streamBridge;
 
-    public AdminGatewayKafkaResource(StreamBridge streamBridge, KafkaConsumer kafkaConsumer) {
+    public PatientGatewayKafkaResource(StreamBridge streamBridge, KafkaConsumer kafkaConsumer) {
         this.streamBridge = streamBridge;
         this.kafkaConsumer = kafkaConsumer;
     }

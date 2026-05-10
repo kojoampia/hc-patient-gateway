@@ -15,7 +15,7 @@ import org.springframework.boot.test.context.SpringBootTest;
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
-@SpringBootTest(classes = { AdminGatewayApp.class, JacksonConfiguration.class, AsyncSyncConfiguration.class })
+@SpringBootTest(classes = { PatientGatewayApp.class, JacksonConfiguration.class, AsyncSyncConfiguration.class })
 @EmbeddedMongo
 @EmbeddedKafka
 public @interface IntegrationTest {
