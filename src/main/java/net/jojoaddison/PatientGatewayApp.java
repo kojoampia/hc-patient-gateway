@@ -20,13 +20,13 @@ import tech.jhipster.config.JHipsterConstants;
 
 @SpringBootApplication
 @EnableConfigurationProperties({ ApplicationProperties.class })
-public class AdminGatewayApp {
+public class PatientGatewayApp {
 
-    private static final Logger log = LoggerFactory.getLogger(AdminGatewayApp.class);
+    private static final Logger log = LoggerFactory.getLogger(PatientGatewayApp.class);
 
     private final Environment env;
 
-    public AdminGatewayApp(Environment env) {
+    public PatientGatewayApp(Environment env) {
         this.env = env;
     }
 
@@ -66,7 +66,7 @@ public class AdminGatewayApp {
      * @param args the command line arguments.
      */
     public static void main(String[] args) {
-        SpringApplication app = new SpringApplication(AdminGatewayApp.class);
+        SpringApplication app = new SpringApplication(PatientGatewayApp.class);
         DefaultProfileUtil.addDefaultProfile(app);
         Environment env = app.run(args).getEnvironment();
         logApplicationStartup(env);

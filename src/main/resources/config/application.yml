@@ -224,8 +224,8 @@ jhipster:
   api-docs:
     default-include-pattern: /api/**
     management-include-pattern: /management/**
-    title: Admin Gateway API
-    description: Admin Gateway API documentation
+    title: PatientGateway API
+    description: PatientGateway API documentation
     version: 0.0.1
     terms-of-service-url:
     contact-name:
