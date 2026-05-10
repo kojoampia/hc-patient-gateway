@@ -1,6 +1,6 @@
 package net.jojoaddison.domain;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import tools.jackson.annotation.JsonIgnoreProperties;
 import java.io.Serializable;
 import java.time.Instant;
 import org.springframework.data.annotation.CreatedDate;

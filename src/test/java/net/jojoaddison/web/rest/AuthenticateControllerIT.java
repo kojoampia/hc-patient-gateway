@@ -1,6 +1,6 @@
 package net.jojoaddison.web.rest;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import net.jojoaddison.IntegrationTest;
 import net.jojoaddison.domain.User;
 import net.jojoaddison.repository.UserRepository;

@@ -1,6 +1,6 @@
 package net.jojoaddison.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import net.jojoaddison.web.rest.errors.ExceptionTranslator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
