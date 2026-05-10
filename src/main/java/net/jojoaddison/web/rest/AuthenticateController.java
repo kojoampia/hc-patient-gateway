@@ -3,7 +3,7 @@ package net.jojoaddison.web.rest;
 import static net.jojoaddison.security.SecurityUtils.AUTHORITIES_KEY;
 import static net.jojoaddison.security.SecurityUtils.JWT_ALGORITHM;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
+import tools.jackson.annotation.JsonProperty;
 import jakarta.validation.Valid;
 import java.security.Principal;
 import java.time.Instant;
