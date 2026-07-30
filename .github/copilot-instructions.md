@@ -11,8 +11,10 @@
 
 ## Architecture
 
-- This is a JHipster Spring Boot reactive gateway (`net.jojoaddison`) with MongoDB + Kafka.
-- All REST controllers should use Spring WebFlux return types (`Mono<T>`, `Flux<T>`); avoid blocking patterns.
+- This is a JHipster-generated Spring Boot 4.0.6 reactive gateway (`net.jojoaddison`) with MongoDB (Mongock migrations) + Kafka, running on Spring WebFlux and Spring Cloud Gateway.
+- It owns authentication and user/account management for the patient subsystem; the sibling `hc-patient-service` only validates the JWTs this app issues.
+- All REST controllers should use Spring WebFlux return types (`Mono<T>`, `Flux<T>`); avoid blocking patterns. BlockHound is active in tests and will fail on blocking calls.
+- Routing is discovery-driven: `/services/{serviceId}/**` is rewritten to `/**` downstream with the `JWTRelay` default filter. Do not add static route definitions without a reason.
 - Keep layer boundaries aligned with ArchUnit rules in `src/test/java/net/jojoaddison/TechnicalStructureTest.java`:
   - `config`
   - `web` (REST controllers, filters)
@@ -39,7 +41,7 @@
 
 ## Conventions
 
-- Java version must stay within JDK 17-21; Maven must be >= 3.2.5 (enforced in `pom.xml`).
+- The build targets Java 26 (`java.version`); the Maven Enforcer accepts JDK 17-26 (`[17,27)`). Maven must be >= 3.2.5.
 - Use profile-driven runs/builds (`dev` default, `prod` for release artifacts).
 - Integration test naming follows Maven defaults:
   - Unit tests: `*Test.java`
@@ -58,6 +60,10 @@
 
 ## Key References
 
-- See `README.md` for operational workflows and Docker compose usage.
+- See `CLAUDE.md` for the verified stack, package map, and command reference.
+- See `patient-gateway.md` for the plan of record: open decisions, platform hygiene, auth/onboarding work, and the tracked test-coverage gaps.
+- See `AGENTS.md` for standing quality/security/performance expectations.
+- See `README.md` for the endpoint inventory, security rules, seed data, and Docker compose usage.
+- Ignore `angular.json` (leftover, no client here) and treat `deploy.sh`/`build-deploy.sh` as stale copies from the admin gateway.
 - See `pom.xml` for profiles, Java/Maven constraints, and test plugin setup.
 - See `package.json` for standard local commands used by this repository.

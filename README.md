@@ -1,6 +1,23 @@
 # PatientGateway
 
-Reactive Spring Cloud Gateway for user authentication, user administration, service routing, and a small Kafka bridge. The codebase is built with Spring Boot 3, Spring WebFlux, Spring Security JWT, MongoDB, Consul, Kafka, and Mongock.
+Reactive Spring Cloud Gateway for user authentication, user administration, service routing, and a small Kafka bridge. It fronts the Health Connect patient microservice (`hc-patient-service`) and owns all user/account data for the patient subsystem.
+
+## Stack
+
+Values below come from `pom.xml` and `.yo-rc.json`:
+
+| Component        | Version / choice                                                                   |
+| ---------------- | ---------------------------------------------------------------------------------- |
+| Java             | 26 (`java.version`); Maven Enforcer allows 17–26 (`[17,27)`), Maven ≥ 3.2.5        |
+| Framework        | Spring Boot 4.0.6, Spring Cloud 2025.1.1, `tech.jhipster:jhipster-framework` 9.0.0 |
+| Web stack        | Spring WebFlux + Spring Cloud Gateway (**reactive throughout**)                    |
+| Security         | Spring Security, JWT resource server                                               |
+| Data             | MongoDB, Mongock migrations                                                        |
+| Messaging        | Kafka via Spring Cloud Stream (`confluentinc/cp-kafka:7.5.2` locally)              |
+| Discovery/config | Consul                                                                             |
+| Generator        | JHipster 8.3.0 (`skipClient: true`)                                                |
+
+There is no full JHipster BOM here — only the `jhipster-framework` library — because the app was upgraded to Spring Boot 4 ahead of the generator.
 
 ## What is implemented
 
@@ -14,7 +31,7 @@ Reactive Spring Cloud Gateway for user authentication, user administration, serv
 - **Kafka publish/consume endpoints** via `/api/patient-gateway-kafka`
 - **Mongo bootstrap data** created by Mongock on startup
 
-There is **no generated frontend app** in this repository. The main resources under `src/main/resources` are configuration, i18n bundles, and mail templates.
+There is **no generated frontend app** in this repository (`skipClient: true`, no `src/main/webapp`). The main resources under `src/main/resources` are configuration, i18n bundles, and mail templates. The leftover `angular.json` at the repo root is inert. The patient UI lives in the separate `hc-patient-dashboard` repo and reaches this gateway over HTTP.
 
 ## Runtime defaults
 
@@ -36,6 +53,8 @@ The app is configured to use **Consul for discovery/config** and will not start 
 - Gateway routing rewrites proxied paths to:
   - `/{remaining}`
 - The default gateway filter is **`JWTRelay`**, which forwards validated bearer tokens to downstream services.
+
+Downstream services must therefore validate the same signing key. The `base64-secret` committed in this repo's `application-dev.yml`/`application-prod.yml` **differs** from the one committed in `hc-patient-service`, so both apps must be pointed at a shared secret (env var or Consul KV) before a relayed token is accepted downstream.
 
 Security rules in `SecurityConfiguration` currently allow anonymous access to:
 
@@ -194,6 +213,19 @@ Or use the existing npm wrapper:
 npm run backend:unit:test
 ```
 
+Run a single class or method. Integration tests (`*IT`, `*IntTest`) are owned by failsafe and selected with `-Dit.test`; surefire is configured to exclude them, so `-Dtest=SomethingIT` matches nothing:
+
+```bash
+./mvnw test -Dtest=SecurityUtilsUnitTest                  # unit test
+./mvnw verify -Dit.test=AuthenticateControllerIT          # one integration test
+./mvnw verify -Dit.test=AuthenticateControllerIT#testAuthorize
+./mvnw verify -DskipITs                                   # unit tests only
+```
+
+Integration tests bring up MongoDB and Kafka with Testcontainers (see `IntegrationTest` and `config/*TestContainer*`), so they need Docker but not `npm run services:up`. BlockHound (`config/JHipsterBlockHoundIntegration`) fails tests that block on a reactive thread — keep controllers and services non-blocking.
+
+Known coverage gaps are tracked in [`patient-gateway.md`](patient-gateway.md) under "Phase C — test coverage backlog".
+
 Additional checks:
 
 ```bash
@@ -225,7 +257,15 @@ The repository also contains Docker definitions for:
 - Zipkin: `src/main/docker/zipkin.yml`
 - Monitoring stack: `src/main/docker/monitoring.yml`
 
+## Repository caveats
+
+- `deploy.sh` and `build-deploy.sh` were copied from the admin gateway and still tag/push `admingateway` / expect a `br-admin-gateway` directory. They are **wrong for this repo** — fix or ignore them; do not run them expecting a patient-gateway image.
+- `angular.json` is a leftover from before `skipClient` and builds nothing.
+- `patient-gw.log` is output from the workspace-level `start-patient.sh` helper.
+- No CI workflows exist in `.github/`; the `ci:*` npm scripts are unused entry points.
+
 ## References
 
 - JHipster 8.3.0 docs: <https://www.jhipster.tech/documentation-archive/v8.3.0>
 - Spring Cloud Gateway docs: <https://docs.spring.io/spring-cloud-gateway/reference/>
+- Sibling repos: `hc-patient-service` (microservice), `hc-patient-dashboard` (Angular UI)
