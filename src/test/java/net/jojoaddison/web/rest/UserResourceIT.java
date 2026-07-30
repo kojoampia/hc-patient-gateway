@@ -2,7 +2,6 @@ package net.jojoaddison.web.rest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import tools.jackson.databind.ObjectMapper;
 import java.time.Instant;
 import java.util.*;
 import java.util.function.Consumer;
@@ -17,10 +16,11 @@ import org.apache.commons.lang3.RandomStringUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
+import org.springframework.boot.webtestclient.autoconfigure.AutoConfigureWebTestClient;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Integration tests for the {@link UserResource} REST controller.
@@ -113,7 +113,7 @@ class UserResourceIT {
         user.setActivated(true);
         user.setImageUrl(DEFAULT_IMAGEURL);
         user.setLangKey(DEFAULT_LANGKEY);
-        user.setAuthorities(Collections.singleton(AuthoritiesConstants.USER));
+        user.setAuthorities(Set.of(AuthoritiesConstants.USER));
 
         webTestClient
             .post()
@@ -151,7 +151,7 @@ class UserResourceIT {
         user.setActivated(true);
         user.setImageUrl(DEFAULT_IMAGEURL);
         user.setLangKey(DEFAULT_LANGKEY);
-        user.setAuthorities(Collections.singleton(AuthoritiesConstants.USER));
+        user.setAuthorities(Set.of(AuthoritiesConstants.USER));
 
         // An entity with an existing ID cannot be created, so this API call must fail
         webTestClient
@@ -182,7 +182,7 @@ class UserResourceIT {
         user.setActivated(true);
         user.setImageUrl(DEFAULT_IMAGEURL);
         user.setLangKey(DEFAULT_LANGKEY);
-        user.setAuthorities(Collections.singleton(AuthoritiesConstants.USER));
+        user.setAuthorities(Set.of(AuthoritiesConstants.USER));
 
         // Create the User
         webTestClient
@@ -213,7 +213,7 @@ class UserResourceIT {
         user.setActivated(true);
         user.setImageUrl(DEFAULT_IMAGEURL);
         user.setLangKey(DEFAULT_LANGKEY);
-        user.setAuthorities(Collections.singleton(AuthoritiesConstants.USER));
+        user.setAuthorities(Set.of(AuthoritiesConstants.USER));
 
         // Create the User
         webTestClient
@@ -316,7 +316,7 @@ class UserResourceIT {
         user.setCreatedDate(updatedUser.getCreatedDate());
         user.setLastModifiedBy(updatedUser.getLastModifiedBy());
         user.setLastModifiedDate(updatedUser.getLastModifiedDate());
-        user.setAuthorities(Collections.singleton(AuthoritiesConstants.USER));
+        user.setAuthorities(Set.of(AuthoritiesConstants.USER));
 
         webTestClient
             .put()
@@ -362,7 +362,7 @@ class UserResourceIT {
         user.setCreatedDate(updatedUser.getCreatedDate());
         user.setLastModifiedBy(updatedUser.getLastModifiedBy());
         user.setLastModifiedDate(updatedUser.getLastModifiedDate());
-        user.setAuthorities(Collections.singleton(AuthoritiesConstants.USER));
+        user.setAuthorities(Set.of(AuthoritiesConstants.USER));
 
         webTestClient
             .put()
@@ -419,7 +419,7 @@ class UserResourceIT {
         user.setCreatedDate(updatedUser.getCreatedDate());
         user.setLastModifiedBy(updatedUser.getLastModifiedBy());
         user.setLastModifiedDate(updatedUser.getLastModifiedDate());
-        user.setAuthorities(Collections.singleton(AuthoritiesConstants.USER));
+        user.setAuthorities(Set.of(AuthoritiesConstants.USER));
 
         webTestClient
             .put()
@@ -464,7 +464,7 @@ class UserResourceIT {
         user.setCreatedDate(updatedUser.getCreatedDate());
         user.setLastModifiedBy(updatedUser.getLastModifiedBy());
         user.setLastModifiedDate(updatedUser.getLastModifiedDate());
-        user.setAuthorities(Collections.singleton(AuthoritiesConstants.USER));
+        user.setAuthorities(Set.of(AuthoritiesConstants.USER));
 
         webTestClient
             .put()
@@ -523,7 +523,7 @@ class UserResourceIT {
         userDTO.setLangKey(DEFAULT_LANGKEY);
         userDTO.setCreatedBy(DEFAULT_LOGIN);
         userDTO.setLastModifiedBy(DEFAULT_LOGIN);
-        userDTO.setAuthorities(Collections.singleton(AuthoritiesConstants.USER));
+        userDTO.setAuthorities(Set.of(AuthoritiesConstants.USER));
 
         User user = userMapper.userDTOToUser(userDTO);
         assertThat(user.getId()).isEqualTo(DEFAULT_ID);

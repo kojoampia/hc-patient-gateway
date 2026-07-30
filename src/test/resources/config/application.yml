@@ -54,9 +54,8 @@ spring:
         kafkaProducer-out-0:
           content-type: text/plain
           group: patient-gateway
-  jackson:
-    serialization:
-      write-durations-as-timestamps: false
+  # Jackson 3 removed SerializationFeature.WRITE_DURATIONS_AS_TIMESTAMPS; durations serialise as
+  # ISO-8601 strings by default, so no spring.jackson.serialization override is needed here.
   mail:
     host: localhost
   main:

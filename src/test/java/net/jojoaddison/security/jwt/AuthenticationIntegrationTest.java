@@ -9,7 +9,7 @@ import net.jojoaddison.config.SecurityJwtConfiguration;
 import net.jojoaddison.config.WebConfigurer;
 import net.jojoaddison.management.SecurityMetersService;
 import net.jojoaddison.web.rest.AuthenticateController;
-import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest;
+import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Import;
 import tech.jhipster.config.JHipsterProperties;

@@ -34,7 +34,7 @@ public class TestContainersSpringContextCustomizerFactory implements ContextCust
                         beanFactory.registerSingleton(MongoDbTestContainer.class.getName(), mongoDbBean);
                         // ((DefaultListableBeanFactory)beanFactory).registerDisposableBean(MongoDbTestContainer.class.getName(), mongoDbBean);
                     }
-                    testValues = testValues.and("spring.data.mongodb.uri=" + mongoDbBean.getMongoDBContainer().getReplicaSetUrl());
+                    testValues = testValues.and("spring.mongodb.uri=" + mongoDbBean.getMongoDBContainer().getReplicaSetUrl());
                 }
                 testValues.applyTo(context);
             }

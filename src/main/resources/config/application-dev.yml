@@ -54,9 +54,10 @@ spring:
           - git-branch=${git.branch:}
       host: localhost
       port: 8500
-  data:
-    mongodb:
-      uri: mongodb://localhost:27017/patientGateway?waitQueueMultiple=1000
+  # Spring Boot 4 moved the Mongo properties from spring.data.mongodb.* to spring.mongodb.*;
+  # the old prefix is deprecated at error level and is no longer bound.
+  mongodb:
+    uri: mongodb://localhost:27017/patientGateway?waitQueueMultiple=1000
   mail:
     host: localhost
     port: 25

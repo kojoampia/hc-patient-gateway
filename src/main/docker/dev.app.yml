@@ -16,8 +16,8 @@ services:
       # SPRING CLOUD
       - SPRING_CLOUD_CONSUL_HOST=dev_consul
       - SPRING_CLOUD_CONSUL_PORT=8500
-      - SPRING_DATA_MONGODB_URI=mongodb://dev_mongodb:27017
-      - SPRING_DATA_MONGODB_DATABASE=PatientGateway
+      - SPRING_MONGODB_URI=mongodb://dev_mongodb:27017
+      - SPRING_MONGODB_DATABASE=PatientGateway
       - SPRING_CLOUD_STREAM_KAFKA_BROKERS=dev_kafka:9092
       - SPRING_CLOUD_STREAM_KAFKA_BINDER_BROKERS=dev_kafka:9092
       # JHIPSTER CONFIG

@@ -28,6 +28,8 @@
         <jhipster-framework.version>9.0.0</jhipster-framework.version>
         <spring-boot.version>4.0.6</spring-boot.version>
         <spring-cloud.version>2025.1.1</spring-cloud.version>
+        <dropwizard-metrics.version>4.2.39</dropwizard-metrics.version>
+        <testcontainers.version>1.21.4</testcontainers.version>
         <springdoc.version>3.0.3</springdoc.version>
         <feign-reactor-bom.version>4.2.1</feign-reactor-bom.version>
         <logstash-logback-encoder.version>9.0</logstash-logback-encoder.version>
@@ -55,7 +57,7 @@
         <maven-site-plugin.version>3.12.1</maven-site-plugin.version>
         <maven-surefire-plugin.version>3.5.5</maven-surefire-plugin.version>
         <maven-war-plugin.version>3.4.0</maven-war-plugin.version>
-        <modernizer-maven-plugin.version>2.7.0</modernizer-maven-plugin.version>
+        <modernizer-maven-plugin.version>3.5.0</modernizer-maven-plugin.version>
         <nohttp-checkstyle.version>0.0.11</nohttp-checkstyle.version>
         <profile.api-docs/>
         <profile.e2e/>
@@ -68,6 +70,21 @@
 
     <dependencyManagement>
         <dependencies>
+            <!--
+                Must be imported before spring-boot-dependencies to win: Spring Boot 4's BOM
+                pulls in Testcontainers 2.x, which re-coordinated every module
+                (junit-jupiter -> testcontainers-junit-jupiter) and moved the container classes
+                (org.testcontainers.containers.KafkaContainer -> org.testcontainers.kafka.KafkaContainer).
+                Staying on 1.21.4 keeps src/test compiling and matches hc-patient-service.
+                Upgrading to Testcontainers 2.x is tracked in patient-gateway.md.
+            -->
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>${testcontainers.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <dependency>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>
@@ -151,10 +168,18 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-loader-tools</artifactId>
+            <!-- Spring Boot 4's BOM no longer manages this artifact; it releases in lockstep with the framework. -->
+            <version>${spring-boot.version}</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <!-- Required by aop/logging/LoggingAspect (org.aspectj.lang).
+                 Spring Boot 4 renamed spring-boot-starter-aop to spring-boot-starter-aspectj. -->
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aspectj</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -179,6 +204,14 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <dependency>
+            <!-- Spring Boot 4 split the test slices out of spring-boot-starter-test: @WebFluxTest lives in
+                 spring-boot-webflux-test and @AutoConfigureWebTestClient in spring-boot-webtestclient
+                 (pulled in transitively). -->
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-webflux-test</artifactId>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -211,10 +244,11 @@
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webflux-api</artifactId>
         </dependency>
-        <dependency>
-            <groupId>tools.jackson.datatype</groupId>
-            <artifactId>jackson-datatype-jsr310</artifactId>
-        </dependency>
+        <!--
+            No jackson-datatype-jsr310 dependency: Jackson 3 folds java.time support into
+            jackson-databind (tools.jackson.databind.ext.javatime, auto-registered), and no
+            tools.jackson.datatype:jackson-datatype-jsr310 artifact is published.
+        -->
         <dependency>
             <groupId>com.playtika.reactivefeign</groupId>
             <artifactId>feign-reactor-cloud</artifactId>
@@ -244,6 +278,8 @@
         <dependency>
             <groupId>io.dropwizard.metrics</groupId>
             <artifactId>metrics-core</artifactId>
+            <!-- Spring Boot 4's BOM dropped Dropwizard Metrics management, so pin it here. -->
+            <version>${dropwizard-metrics.version}</version>
         </dependency>
         <dependency>
             <groupId>io.micrometer</groupId>
@@ -317,8 +353,10 @@
             <artifactId>spring-cloud-starter-consul-discovery</artifactId>
         </dependency>
         <dependency>
+            <!-- Spring Cloud Gateway 5 renamed this starter; the reactive server is now
+                 spring-cloud-starter-gateway-server-webflux (packages are unchanged). -->
             <groupId>org.springframework.cloud</groupId>
-            <artifactId>spring-cloud-starter-gateway</artifactId>
+            <artifactId>spring-cloud-starter-gateway-server-webflux</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.cloud</groupId>
@@ -792,6 +830,14 @@
                     </executions>
                     <configuration>
                         <javaVersion>${java.version}</javaVersion>
+                        <exclusions>
+                            <!--
+                                Modernizer suggests String.equalsFoldCase here, but full Unicode case folding
+                                is not equivalent to equalsIgnoreCase (it also matches e.g. "Fuß"/"FUSS").
+                                Login and email comparisons must keep the current semantics, so the rule stays off.
+                            -->
+                            <exclusion>java/lang/String.equalsIgnoreCase:(Ljava/lang/String;)Z</exclusion>
+                        </exclusions>
                     </configuration>
                 </plugin>
                 <plugin>

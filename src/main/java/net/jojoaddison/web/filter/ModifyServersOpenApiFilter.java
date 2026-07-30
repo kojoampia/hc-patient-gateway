@@ -1,10 +1,5 @@
 package net.jojoaddison.web.filter;
 
-import tools.jackson.core.JsonProcessingException;
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.node.ArrayNode;
-import tools.jackson.databind.node.ObjectNode;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -30,6 +25,11 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 
 @Component
 public class ModifyServersOpenApiFilter implements GlobalFilter, Ordered {
@@ -120,7 +120,7 @@ public class ModifyServersOpenApiFilter implements GlobalFilter, Ordered {
 
                 rewritedBody = jsonBody.toString();
                 return rewritedBodyToDataBuffer();
-            } catch (JsonProcessingException e) {
+            } catch (JacksonException e) {
                 log.error("Error when modify servers from api-doc of {}: {}", path, e.getMessage());
             }
             return join;

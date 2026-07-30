@@ -10,7 +10,7 @@ Status legend: `[x]` done · `[~]` partial / diverges from plan · `[ ]` not sta
 
 ## Open decisions
 
-1. **Patient/angel roles.** The blueprint expects an authenticated `currentUser` whose role is `PATIENT` or `ANGEL`. This gateway mints only `ROLE_ADMIN`, `ROLE_USER`, `ROLE_ANONYMOUS` (`AuthoritiesConstants`), and the dashboard's `Authority` enum knows only ADMIN/USER. Adding roles is a joint change across gateway (issuer + seed data), microservice (authorization checks), and both clients.
+1. **Patient/angel roles.** `ROLE_PATIENT` and `ROLE_ANGEL` now exist in `AuthoritiesConstants` and are seeded, but nothing consumes them yet: no route or method authorizes on them, `hc-patient-service` does not check them, and the dashboard's `Authority` enum still knows only ADMIN/USER. Decide what each role may actually do before wiring clients to it.
 2. **Registration ownership.** Onboarding (basic info → identification → plan) spans this service's `POST /api/register` and the patient service's profile/subscription domain. Decide which service owns the transaction and what happens if the second step fails.
 3. **Where rate limiting lives.** Neither service implements it. The gateway is the natural choke point; confirm before adding it downstream.
 
@@ -21,7 +21,7 @@ Status legend: `[x]` done · `[~]` partial / diverges from plan · `[ ]` not sta
 - `[x]` Admin user management (`/api/admin/users`), authority management (`/api/authorities`), public user listing (`/api/users`).
 - `[x]` Discovery-based routing: `/services/{serviceId}/**` → `/**` downstream, with the `JWTRelay` default filter.
 - `[x]` Route inspection (`GET /api/gateway/routes`) and the Kafka bridge (`/api/patient-gateway-kafka`).
-- `[x]` Mongock bootstrap: `ROLE_USER`/`ROLE_ADMIN` authorities plus activated `admin` and `user` accounts created by `system`.
+- `[x]` Mongock seeding, split into two idempotent change units sharing the helpers in `SeedData`: `InitialSetupMigration` (001) creates `ROLE_USER`/`ROLE_ADMIN` and the activated `user`/`admin` accounts, `PatientRolesMigration` (002) creates `ROLE_PATIENT`/`ROLE_ANGEL` and the `patient`/`angel` accounts. A second change unit rather than an edit to 001, so databases that already ran 001 still get the new roles. Seed passwords are derived per login, encoded with the application `PasswordEncoder`, and never logged — they are development credentials to rotate or remove outside development.
 - `[x]` Spring Boot 4.0.6 / Java 26 upgrade, reactive throughout, BlockHound active in tests.
 
 ## Phase A — platform hygiene
@@ -33,9 +33,20 @@ Status legend: `[x]` done · `[~]` partial / diverges from plan · `[ ]` not sta
 - `[ ]` Decide the API-docs posture: OpenAPI is only served when the `api-docs` profile is active, and `/v3/api-docs/**` additionally requires `ROLE_ADMIN`.
 - `[ ]` Confirm mail configuration per environment — account activation and password reset silently depend on a working `JavaMailSender` (`application-*.yml` `spring.mail` on port 25).
 
+### Spring Boot 4 upgrade — finished, with leftovers
+
+The Java 26 / Spring Boot 4 upgrade had left the project unbuildable; `./mvnw` could not even read the POM. Fixed: renamed `spring-cloud-starter-gateway` → `spring-cloud-starter-gateway-server-webflux` and `spring-boot-starter-aop` → `spring-boot-starter-aspectj`, pinned the artifacts Spring Boot 4's BOM no longer manages (`spring-boot-loader-tools`, Dropwizard `metrics-core`), dropped the unpublished `jackson-datatype-jsr310`, added `spring-boot-webflux-test`, moved the Mongo properties to the `spring.mongodb.*` prefix (the old one is deprecated at _error_ level, so the configured URI was being ignored at runtime), and updated the moved/renamed types (`MongoAutoConfiguration`, Jackson 3 annotations and `JacksonException`, Hibernate Validator's `EmailValidator`, `@MockitoBean`, `@WebFluxTest`, `@AutoConfigureWebTestClient`). `./mvnw verify` now compiles and runs; 101 of 111 tests pass.
+
+Still open:
+
+- `[ ]` `TokenAuthenticationIT` and `TokenAuthenticationSecurityMetersIT` (9 errors): the `@WebFluxTest` slice fails with `No qualifying bean of type ServerHttpSecurity` because Spring Boot 4 no longer contributes it to a sliced context that imports `SecurityConfiguration`. Decide whether to import the reactive-security auto-configuration into the slice or promote these to full `@IntegrationTest`s.
+- `[ ]` `SpaWebFilterIT.testFilterDoesNotForwardToIndexForV3ApiDocs` (1 failure): `/v3/api-docs` returns 500 because BlockHound trips on `java.io.RandomAccessFile#readBytes` — springdoc reads from disk on the event loop. Worth treating as a real reactive defect, not just a test problem.
+- `[ ]` Upgrade to Testcontainers 2.x. The build pins 1.21.4 ahead of Spring Boot 4's BOM (2.0.5) because 2.x re-coordinated every module (`junit-jupiter` → `testcontainers-junit-jupiter`) and moved the container classes (`org.testcontainers.containers.KafkaContainer` → `org.testcontainers.kafka.KafkaContainer`).
+- `[ ]` Revisit the Modernizer exclusion for `String.equalsIgnoreCase`. Modernizer was bumped 2.7.0 → 3.5.0 (2.7.0 cannot read Java 26 bytecode and silently failed the build), and it now suggests `String.equalsFoldCase`. That is not an equivalent swap for login/email comparison, so the rule is excluded in `pom.xml`.
+
 ## Phase B — auth/onboarding features
 
-- `[ ]` Add the `PATIENT`/`ANGEL` authorities (decision 1): `AuthoritiesConstants`, `InitialSetupMigration` seed data, `AuthorityResource` expectations, and the JWT `auth` claim consumers in both clients.
+- `[~]` `PATIENT`/`ANGEL` authorities: the constants and Mongock seeds exist. Still to do — decide the authorization rules that use them, extend `AuthorityResource` expectations, and teach the JWT `auth` claim consumers in `hc-patient-service` and the dashboard about them (decision 1).
 - `[ ]` Define role assignment at registration — `registerUser(...)` currently forces `ROLE_USER` regardless of the incoming DTO.
 - `[ ]` Agree the onboarding contract with `hc-patient-service` (decision 2), including whether the gateway proxies a single onboarding call or the client makes two.
 - `[ ]` Expose whatever profile linkage the clients need so a freshly registered user can be mapped to a `Profile` in the microservice.
