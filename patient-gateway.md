@@ -40,6 +40,21 @@ The Java 26 / Spring Boot 4 upgrade had left the project unbuildable; `./mvnw` c
 - `[x]` `TokenAuthenticationIT` / `TokenAuthenticationSecurityMetersIT` failed with `No qualifying bean of type ServerHttpSecurity`, because Spring Boot 4's `@WebFluxTest` slice no longer contributes reactive security to a context that imports `SecurityConfiguration`. `AuthenticationIntegrationTest` now adds `@ImportAutoConfiguration(ReactiveWebSecurityAutoConfiguration.class)` — note Boot 4 renamed that class from `ReactiveSecurityAutoConfiguration`.
 - `[x]` `SpaWebFilterIT` got a 500 for `/v3/api-docs` because BlockHound tripped on `java.io.RandomAccessFile#readBytes`. Generating the document genuinely reads jar entries — it scans the classpath for webhook classes and springdoc's Kotlin customizers make kotlin-reflect load its built-ins — so `JHipsterBlockHoundIntegration` allows blocking within `AbstractOpenApiResource#getOpenApi`. The document is cached, so this is once per application rather than per request. If `/v3/api-docs` latency ever matters, warm it at startup instead of on the first request.
 
+Deploying the stack for the first time (see `hc-patient/deploy`) surfaced two more, both fixed:
+
+- `[x]` **Routing was completely inert.** Spring Cloud Gateway 5 moved every server property under
+  `spring.cloud.gateway.server.webflux.*`, so the `discovery.locator` block and the `JWTRelay`
+  default filter in `application.yml` bound to nothing. The discovery locator produced no routes at
+  all: `/services/hcpatientservice/**` returned 404 for an authenticated caller, while unauthenticated
+  callers still got a 401 from the security filter, which is what kept it hidden. With the keys moved,
+  an authenticated request to `/services/hcpatientservice/api/profiles` returns 200 through Consul
+  discovery.
+- `[x]` **`GET /api/gateway/routes` always returned `[]`.** It called
+  `routeLocator.getRoutes().subscribe(...)` and returned the still-empty list immediately, so the
+  response was serialized before the asynchronous subscription filled it. Now returns a `Mono` and
+  collects the routes; the blocking `DiscoveryClient` lookup moved to the bounded-elastic scheduler
+  rather than running on an event-loop thread.
+
 Still open:
 
 - `[ ]` Upgrade to Testcontainers 2.x. The build pins 1.21.4 ahead of Spring Boot 4's BOM (2.0.5) because 2.x re-coordinated every module (`junit-jupiter` → `testcontainers-junit-jupiter`) and moved the container classes (`org.testcontainers.containers.KafkaContainer` → `org.testcontainers.kafka.KafkaContainer`).

@@ -114,24 +114,31 @@ spring:
         watch:
           enabled: false
     gateway:
-      default-filters:
-        - JWTRelay
-      discovery:
-        locator:
-          enabled: true
-          lower-case-service-id: true
-          predicates:
-            - name: Path
-              args:
-                pattern: "'/services/'+serviceId.toLowerCase()+'/**'"
-          filters:
-            - name: RewritePath
-              args:
-                regexp: "'/services/' + serviceId.toLowerCase() + '/(?<remaining>.*)'"
-                replacement: "'/${remaining}'"
-      httpclient:
-        pool:
-          max-connections: 1000
+      # Spring Cloud Gateway 5 (Spring Cloud 2025.x) moved every server property under
+      # `server.webflux`. Left at the old `spring.cloud.gateway.*` paths this whole block binds to
+      # nothing: the discovery locator never produced a route, so GET /api/gateway/routes returned []
+      # and every /services/<id>/** request 404'd for an authenticated caller, while unauthenticated
+      # ones still got a 401 from the security filter and hid the problem.
+      server:
+        webflux:
+          default-filters:
+            - JWTRelay
+          discovery:
+            locator:
+              enabled: true
+              lower-case-service-id: true
+              predicates:
+                - name: Path
+                  args:
+                    pattern: "'/services/'+serviceId.toLowerCase()+'/**'"
+              filters:
+                - name: RewritePath
+                  args:
+                    regexp: "'/services/' + serviceId.toLowerCase() + '/(?<remaining>.*)'"
+                    replacement: "'/${remaining}'"
+          httpclient:
+            pool:
+              max-connections: 1000
     function:
       definition: kafkaConsumer;kafkaProducer
     stream:
