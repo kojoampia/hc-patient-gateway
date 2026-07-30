@@ -1,0 +1,10 @@
+# Keeps the build context to sources + build files. target/ is rebuilt inside the builder stage, and
+# bin/ (api only) is a stale, gitignored copy of the whole project.
+target
+bin
+node_modules
+.git
+.github
+.idea
+.settings
+*.log
