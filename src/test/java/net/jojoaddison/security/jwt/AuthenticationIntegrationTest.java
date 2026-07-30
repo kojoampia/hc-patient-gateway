@@ -9,6 +9,8 @@ import net.jojoaddison.config.SecurityJwtConfiguration;
 import net.jojoaddison.config.WebConfigurer;
 import net.jojoaddison.management.SecurityMetersService;
 import net.jojoaddison.web.rest.AuthenticateController;
+import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
+import org.springframework.boot.security.autoconfigure.web.reactive.ReactiveWebSecurityAutoConfiguration;
 import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Import;
@@ -26,6 +28,9 @@ import tech.jhipster.config.JHipsterProperties;
         JwtAuthenticationTestUtils.class,
     }
 )
+// Spring Boot 4's @WebFluxTest slice no longer contributes reactive security, so the ServerHttpSecurity that
+// SecurityConfiguration#springSecurityFilterChain needs has to be imported explicitly.
+@ImportAutoConfiguration(ReactiveWebSecurityAutoConfiguration.class)
 @WebFluxTest(
     controllers = { AuthenticateController.class },
     properties = {
