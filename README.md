@@ -80,14 +80,36 @@ All other `/api/**` and `/services/**` routes require authentication.
 
 ## Seed data
 
-On an empty MongoDB database, `InitialSetupMigration` creates:
+**No accounts are seeded outside `dev` and `test`.** Read that before assuming a login exists.
 
-- authorities: `ROLE_USER`, `ROLE_ADMIN`
-- users:
-  - `admin` with `ROLE_ADMIN` and `ROLE_USER`
-  - `user` with `ROLE_USER`
+On an empty MongoDB database the Mongock change units create **authorities only**, in every profile,
+because they are structural — registration grants `ROLE_USER`, so a database without them is broken:
 
-Both seeded users are activated and created by `system`.
+- `InitialSetupMigration` (001): `ROLE_USER`, `ROLE_ADMIN`
+- `PatientRolesMigration` (002): `ROLE_PATIENT`, `ROLE_ANGEL`
+
+Accounts come from one of two places instead:
+
+|           | `DevSeedDataInitializer`                                                                | `AdminBootstrapInitializer`                                |
+| --------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Profiles  | `dev` and `test` only                                                                   | any                                                        |
+| Creates   | `admin`, `user`, `patient`, `angel`                                                     | one administrator (`gateway.admin.login`, default `admin`) |
+| Password  | derived from the login by `SeedData.defaultPasswordFor` — `admin` becomes `Admin@01234` | `gateway.admin.password`, which has **no default**         |
+| If absent | —                                                                                       | nothing is created and a warning is logged                 |
+
+Both are additive and idempotent: an existing login is never touched, so accounts created through the
+API survive a restart, and an administrator whose password has been rotated keeps the new one.
+Passwords are never logged.
+
+To bring up a production gateway that someone can log into:
+
+```bash
+GATEWAY_ADMIN_PASSWORD="$(openssl rand -base64 24)"    # then change it after first login
+```
+
+This split exists because the change units used to seed all four accounts in _every_ profile. A
+deployment therefore accepted `admin` / `Admin@01234` from the public internet — which happened to
+this application's production instance, and is what `MigrationsSeedNoAccountsTest` now guards.
 
 ## Main HTTP endpoints
 

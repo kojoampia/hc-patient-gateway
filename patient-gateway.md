@@ -21,10 +21,27 @@ Status legend: `[x]` done · `[~]` partial / diverges from plan · `[ ]` not sta
 - `[x]` Admin user management (`/api/admin/users`), authority management (`/api/authorities`), public user listing (`/api/users`).
 - `[x]` Discovery-based routing: `/services/{serviceId}/**` → `/**` downstream, with the `JWTRelay` default filter.
 - `[x]` Route inspection (`GET /api/gateway/routes`) and the Kafka bridge (`/api/patient-gateway-kafka`).
-- `[x]` Mongock seeding, split into two idempotent change units sharing the helpers in `SeedData`: `InitialSetupMigration` (001) creates `ROLE_USER`/`ROLE_ADMIN` and the activated `user`/`admin` accounts, `PatientRolesMigration` (002) creates `ROLE_PATIENT`/`ROLE_ANGEL` and the `patient`/`angel` accounts. A second change unit rather than an edit to 001, so databases that already ran 001 still get the new roles. Seed passwords are derived per login, encoded with the application `PasswordEncoder`, and never logged — they are development credentials to rotate or remove outside development.
+- `[x]` Seeding, in three parts since the credentials fix (2026-08-02). Two idempotent Mongock change units seed **authorities only, in every profile**: `InitialSetupMigration` (001) `ROLE_USER`/`ROLE_ADMIN`, `PatientRolesMigration` (002) `ROLE_PATIENT`/`ROLE_ANGEL` — a second change unit rather than an edit to 001, so databases that already ran 001 still get the new roles. `DevSeedDataInitializer` seeds the `admin`/`user`/`patient`/`angel` accounts under `dev`/`test` only, with passwords derived per login by `SeedData`. `AdminBootstrapInitializer` creates the first administrator in any profile from `gateway.admin.password` (`GATEWAY_ADMIN_PASSWORD`), which has **no default**; unset, nothing is created and it warns. Passwords are never logged. The change units create no accounts because Mongock has no notion of a profile — see the incident note below.
 - `[x]` Spring Boot 4.0.6 / Java 26 upgrade, reactive throughout, BlockHound active in tests.
 
 ## Phase A — platform hygiene
+
+> **Fixed 2026-08-02 — seeded credentials reached production.** From the first deploy until this fix,
+> `https://patient.abofonsa.com` accepted `admin` / `Admin@01234`, along with `user`, `patient` and
+> `angel` on the same derivation. The cause was structural rather than an oversight in one file: the
+> account seeding lived in Mongock change units, and **a change unit has no notion of a Spring
+> profile** — it runs wherever the application runs. The class carrying a "these are development
+> credentials, rotate them" javadoc was therefore executing, unchanged, in production.
+>
+> The code fix moved account seeding out of the change units (which now seed authorities only, still
+> in every profile, because registration depends on them) into `DevSeedDataInitializer`, gated to
+> `dev`/`test`, and `AdminBootstrapInitializer`, which has no default password. The live database was
+> remediated separately, since no code change can alter accounts that already exist: the
+> administrator's password was rotated to a value generated on the server, and `user`, `patient` and
+> `angel` were deleted. All four derived passwords now return 401 publicly.
+>
+> The lesson worth keeping: a comment saying a credential is for development does not make it so —
+> only a profile gate, or the absence of a default, does.
 
 - `[ ]` **Align the JWT signing key with `hc-patient-service`.** The `base64-secret` committed here differs from the microservice's in both `application-dev.yml` and `application-prod.yml`, so relayed tokens fail signature validation downstream. Source both from one env var / Consul KV entry and drop the committed values.
 - `[ ]` Fix or delete `deploy.sh` and `build-deploy.sh`: both were copied from the admin gateway and still tag/push `admingateway` and expect a `br-admin-gateway` directory.
@@ -146,11 +163,15 @@ Re-verified 2026-07-30: every item below is still open. "Add" means the file doe
 ### Mail and bootstrap
 
 15. `[ ]` **Expand `service/MailServiceIT`** — `sendEmailFromTemplate(...)` with a `null` email never calls `JavaMailSender.send(...)`.
-16. `[ ]` **Add `config/dbmigrations/InitialSetupMigrationIT`.**
-    - `changeSet()` creates `ROLE_USER` and `ROLE_ADMIN`.
-    - Seeded `user` is activated with only `ROLE_USER`.
-    - Seeded `admin` is activated with both `ROLE_ADMIN` and `ROLE_USER`.
-    - Both seeded users have `createdBy = Constants.SYSTEM`.
+16. `[x]` **Migration and bootstrap tests** — done as unit tests rather than an IT, because the property under test is
+    about which profile creates what, and a Mongo container adds nothing to that.
+    - `MigrationsSeedNoAccountsTest`: 001 creates exactly `ROLE_USER`/`ROLE_ADMIN`, 002 exactly
+      `ROLE_PATIENT`/`ROLE_ANGEL`/`ROLE_USER`, neither ever saves a `User`, and `DevSeedDataInitializer` carries a
+      `@Profile` of exactly `dev`/`test`.
+    - `AdminBootstrapInitializerTest`: no password (empty, blank or null) creates nothing; a configured password creates
+      one activated admin with `ROLE_ADMIN`+`ROLE_USER` and the encoded value; an existing admin is never rewritten.
+17. `[ ]` **Consider an IT for the account lifecycle against a real Mongo** — registration granting `ROLE_USER`, then
+    login — which is the part these unit tests deliberately do not cover.
 
 ## Working agreement
 

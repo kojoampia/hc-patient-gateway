@@ -83,7 +83,7 @@ Layer boundaries are enforced at build time by ArchUnit (`src/test/java/net/jojo
 - `repository` — `UserRepository`, `AuthorityRepository` (reactive Spring Data Mongo).
 - `domain` — `User`, `Authority`, `AbstractAuditingEntity`.
 - `security` — `AuthoritiesConstants`, `SecurityUtils`, `DomainUserDetailsService`, `UserNotActivatedException`, and `security/jwt/JWTRelayGatewayFilterFactory`.
-- `config` — `SecurityConfiguration`, `SecurityJwtConfiguration`, `DatabaseConfiguration`, `ReactorConfiguration`, `WebConfigurer`, `config/dbmigrations/InitialSetupMigration` (seeds authorities + `admin`/`user`).
+- `config` — `SecurityConfiguration`, `SecurityJwtConfiguration`, `DatabaseConfiguration`, `ReactorConfiguration`, `WebConfigurer`, `config/dbmigrations/` — `InitialSetupMigration` and `PatientRolesMigration` seed **authorities only, in every profile**; `DevSeedDataInitializer` seeds the `admin`/`user`/`patient`/`angel` accounts under `dev` and `test` only; `AdminBootstrapInitializer` creates the first administrator in any profile from `gateway.admin.password`, which has no default. Do not move account seeding back into a change unit — Mongock has no notion of a profile, which is how production came to accept a derived admin password.
 - `broker` — `KafkaConsumer`/`KafkaProducer`; `management` — `SecurityMetersService`; `aop/logging` — logging aspect.
 
 Security rules, the anonymous/admin path lists, seed data, and the endpoint inventory are documented in `README.md` — keep it in sync when they change.

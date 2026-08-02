@@ -250,4 +250,18 @@ jhipster:
 # https://www.jhipster.tech/common-application-properties/
 # ===================================================================
 
+# The first administrator on an empty database, created by AdminBootstrapInitializer in ANY profile.
+#
+# There is deliberately no password here and no default anywhere in the code: with one, every deployment of this image
+# would accept the same credentials, which is exactly the defect this replaced. Set it per environment, as a secret:
+#
+#   GATEWAY_ADMIN_PASSWORD='<openssl rand -base64 24>'
+#
+# Left unset, no administrator is created. The account is only ever created, never updated, so rotating the password
+# afterwards is done through the API (or by an operator) and survives restarts.
+gateway:
+  admin:
+    login: admin
+    email: admin@localhost
+    password: ${GATEWAY_ADMIN_PASSWORD:}
 # application:

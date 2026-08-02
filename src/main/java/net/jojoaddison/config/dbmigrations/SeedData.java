@@ -17,9 +17,11 @@ import org.springframework.security.crypto.password.PasswordEncoder;
  * <p>Every method is safe to run against a database that already holds the record it would create, so a change unit
  * can be re-run (or a new one added for existing databases) without duplicating or clobbering data.</p>
  *
- * <p><strong>The seeded accounts are development credentials.</strong> Their passwords come from
- * {@link #defaultPasswordFor(String)}, which derives a well-known value from the login, so they must be rotated or the
- * accounts removed before exposing an environment publicly. Passwords are never logged.</p>
+ * <p><strong>{@link #defaultPasswordFor(String)} and {@link #buildUser} produce development credentials only.</strong>
+ * The password is derived from the login and is therefore publicly known, so the only caller is
+ * {@link DevSeedDataInitializer}, which is gated to the {@code dev} and {@code test} profiles. Production accounts come
+ * from {@link AdminBootstrapInitializer}, which has no default password. The authority helper below is different: it is
+ * used in every profile, because the roles are structural. Passwords are never logged.</p>
  */
 final class SeedData {
 
@@ -74,7 +76,7 @@ final class SeedData {
             return false;
         }
         template.save(user);
-        LOG.info("Seeded user {} with a well-known development password — rotate it outside development", user.getLogin());
+        LOG.info("Seeded development user {} with a publicly known password", user.getLogin());
         return true;
     }
 

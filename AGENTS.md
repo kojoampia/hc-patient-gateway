@@ -23,7 +23,7 @@ Statements below are split between **current** (true of the code today) and **ta
 - Constructor injection everywhere; no static initialization blocks.
 - Routing stays discovery-driven: `/services/{serviceId}/**` rewritten to `/**`, with `JWTRelay` as the default filter. A static route needs a written reason.
 - DTOs (`service/dto`) and MapStruct mappers (`service/mapper`) mediate between `domain.User` and the wire — don't return `User` directly from a resource.
-- Mongock (`config/dbmigrations`) owns schema/seed evolution; add a changeset rather than seeding from application code.
+- Mongock (`config/dbmigrations`) owns schema and **authority** evolution; add a change unit rather than seeding from application code. **Accounts are the exception**: a change unit runs in every profile, so seeding one there ships its credentials to production. Development accounts belong in `DevSeedDataInitializer` (profile-gated), and the production administrator in `AdminBootstrapInitializer` (no default password).
 - Kafka via Spring Cloud Stream (`broker/`). Today only the generated `sse-topic` binding exists; real domain topics are agreed cross-repo (see `patient-gateway.md`).
 - **Target:** the gateway is the natural place for rate limiting and request quotas; neither is implemented yet.
 
