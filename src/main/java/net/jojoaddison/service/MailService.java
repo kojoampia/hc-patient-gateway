@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.thymeleaf.context.Context;
 import org.thymeleaf.spring6.SpringTemplateEngine;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 import tech.jhipster.config.JHipsterProperties;
 
 /**
@@ -49,11 +50,28 @@ public class MailService {
         this.templateEngine = templateEngine;
     }
 
+    /**
+     * Sends an email off the calling thread and returns immediately.
+     *
+     * <p>The {@code subscribeOn} is the whole point of this method and must not be removed. JavaMail is blocking, and
+     * every caller here is a reactive handler running on a Netty event loop; without it the {@code Mono.defer} below
+     * runs the SMTP conversation on the subscribing thread — the event loop — for as long as the relay takes. Measured
+     * against a real relay from production: <strong>2.8 seconds on an event loop thread</strong>, during which every
+     * other request assigned to that thread waits. It reads as asynchronous and is not.</p>
+     *
+     * <p>BlockHound does not catch this. It fails blocking calls on non-blocking threads, but {@code MailServiceIT}
+     * mocks {@link JavaMailSender}, so no socket is ever opened during the tests and nothing blocks.
+     * {@code testSendEmailRunsOffTheCallingThread} guards it instead.</p>
+     */
     public void sendEmail(String to, String subject, String content, boolean isMultipart, boolean isHtml) {
         Mono.defer(() -> {
             this.sendEmailSync(to, subject, content, isMultipart, isHtml);
             return Mono.empty();
-        }).subscribe();
+        })
+            .subscribeOn(Schedulers.boundedElastic())
+            // Fire-and-forget, so nothing downstream would ever see a failure: sendEmailSync already logs the mail
+            // failures it expects, and this handles the rest rather than letting Reactor drop them silently.
+            .subscribe(null, e -> log.warn("Email to '{}' failed unexpectedly", to, e));
     }
 
     private void sendEmailSync(String to, String subject, String content, boolean isMultipart, boolean isHtml) {
@@ -81,11 +99,18 @@ public class MailService {
         }
     }
 
+    /**
+     * Renders a template and sends it off the calling thread. See {@link #sendEmail} for why the scheduler matters:
+     * this path additionally renders Thymeleaf and resolves a message bundle, so it does even more work than the send
+     * itself before it reaches the relay.
+     */
     public void sendEmailFromTemplate(User user, String templateName, String titleKey) {
         Mono.defer(() -> {
             this.sendEmailFromTemplateSync(user, templateName, titleKey);
             return Mono.empty();
-        }).subscribe();
+        })
+            .subscribeOn(Schedulers.boundedElastic())
+            .subscribe(null, e -> log.warn("Email to '{}' failed unexpectedly", user.getEmail(), e));
     }
 
     private void sendEmailFromTemplateSync(User user, String templateName, String titleKey) {

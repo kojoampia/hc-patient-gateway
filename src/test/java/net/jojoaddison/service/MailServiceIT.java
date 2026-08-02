@@ -17,6 +17,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Properties;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import net.jojoaddison.IntegrationTest;
@@ -42,6 +45,12 @@ class MailServiceIT {
     private static final String[] languages = {
         // jhipster-needle-i18n-language-constant - JHipster will add/remove languages in this array
     };
+    /**
+     * Mail is sent on {@code Schedulers.boundedElastic()} rather than the caller's thread, so every verification here
+     * has to wait for it instead of asserting immediately. Generous: this only costs time when a test is failing.
+     */
+    private static final long SEND_TIMEOUT_MS = 5_000;
+
     private static final Pattern PATTERN_LOCALE_3 = Pattern.compile("([a-z]{2})-([a-zA-Z]{4})-([a-z]{2})");
     private static final Pattern PATTERN_LOCALE_2 = Pattern.compile("([a-z]{2})-([a-z]{2})");
 
@@ -68,7 +77,7 @@ class MailServiceIT {
     @Test
     void testSendEmail() throws Exception {
         mailService.sendEmail("john.doe@example.com", "testSubject", "testContent", false, false);
-        verify(javaMailSender).send(messageCaptor.capture());
+        verify(javaMailSender, timeout(SEND_TIMEOUT_MS)).send(messageCaptor.capture());
         MimeMessage message = messageCaptor.getValue();
         assertThat(message.getSubject()).isEqualTo("testSubject");
         assertThat(message.getAllRecipients()[0]).hasToString("john.doe@example.com");
@@ -81,7 +90,7 @@ class MailServiceIT {
     @Test
     void testSendHtmlEmail() throws Exception {
         mailService.sendEmail("john.doe@example.com", "testSubject", "testContent", false, true);
-        verify(javaMailSender).send(messageCaptor.capture());
+        verify(javaMailSender, timeout(SEND_TIMEOUT_MS)).send(messageCaptor.capture());
         MimeMessage message = messageCaptor.getValue();
         assertThat(message.getSubject()).isEqualTo("testSubject");
         assertThat(message.getAllRecipients()[0]).hasToString("john.doe@example.com");
@@ -94,7 +103,7 @@ class MailServiceIT {
     @Test
     void testSendMultipartEmail() throws Exception {
         mailService.sendEmail("john.doe@example.com", "testSubject", "testContent", true, false);
-        verify(javaMailSender).send(messageCaptor.capture());
+        verify(javaMailSender, timeout(SEND_TIMEOUT_MS)).send(messageCaptor.capture());
         MimeMessage message = messageCaptor.getValue();
         MimeMultipart mp = (MimeMultipart) message.getContent();
         MimeBodyPart part = (MimeBodyPart) ((MimeMultipart) mp.getBodyPart(0).getContent()).getBodyPart(0);
@@ -111,7 +120,7 @@ class MailServiceIT {
     @Test
     void testSendMultipartHtmlEmail() throws Exception {
         mailService.sendEmail("john.doe@example.com", "testSubject", "testContent", true, true);
-        verify(javaMailSender).send(messageCaptor.capture());
+        verify(javaMailSender, timeout(SEND_TIMEOUT_MS)).send(messageCaptor.capture());
         MimeMessage message = messageCaptor.getValue();
         MimeMultipart mp = (MimeMultipart) message.getContent();
         MimeBodyPart part = (MimeBodyPart) ((MimeMultipart) mp.getBodyPart(0).getContent()).getBodyPart(0);
@@ -132,7 +141,7 @@ class MailServiceIT {
         user.setLogin("john");
         user.setEmail("john.doe@example.com");
         mailService.sendEmailFromTemplate(user, "mail/testEmail", "email.test.title");
-        verify(javaMailSender).send(messageCaptor.capture());
+        verify(javaMailSender, timeout(SEND_TIMEOUT_MS)).send(messageCaptor.capture());
         MimeMessage message = messageCaptor.getValue();
         assertThat(message.getSubject()).isEqualTo("test title");
         assertThat(message.getAllRecipients()[0]).hasToString(user.getEmail());
@@ -148,7 +157,7 @@ class MailServiceIT {
         user.setLogin("john");
         user.setEmail("john.doe@example.com");
         mailService.sendActivationEmail(user);
-        verify(javaMailSender).send(messageCaptor.capture());
+        verify(javaMailSender, timeout(SEND_TIMEOUT_MS)).send(messageCaptor.capture());
         MimeMessage message = messageCaptor.getValue();
         assertThat(message.getAllRecipients()[0]).hasToString(user.getEmail());
         assertThat(message.getFrom()[0]).hasToString(jHipsterProperties.getMail().getFrom());
@@ -163,7 +172,7 @@ class MailServiceIT {
         user.setLogin("john");
         user.setEmail("john.doe@example.com");
         mailService.sendCreationEmail(user);
-        verify(javaMailSender).send(messageCaptor.capture());
+        verify(javaMailSender, timeout(SEND_TIMEOUT_MS)).send(messageCaptor.capture());
         MimeMessage message = messageCaptor.getValue();
         assertThat(message.getAllRecipients()[0]).hasToString(user.getEmail());
         assertThat(message.getFrom()[0]).hasToString(jHipsterProperties.getMail().getFrom());
@@ -178,7 +187,7 @@ class MailServiceIT {
         user.setLogin("john");
         user.setEmail("john.doe@example.com");
         mailService.sendPasswordResetMail(user);
-        verify(javaMailSender).send(messageCaptor.capture());
+        verify(javaMailSender, timeout(SEND_TIMEOUT_MS)).send(messageCaptor.capture());
         MimeMessage message = messageCaptor.getValue();
         assertThat(message.getAllRecipients()[0]).hasToString(user.getEmail());
         assertThat(message.getFrom()[0]).hasToString(jHipsterProperties.getMail().getFrom());
@@ -194,6 +203,40 @@ class MailServiceIT {
         } catch (Exception e) {
             fail("Exception shouldn't have been thrown");
         }
+        // Wait for the attempt: the send is asynchronous now, so returning without throwing proves nothing on its own
+        // — the failure happens on another thread and must stay contained there.
+        verify(javaMailSender, timeout(SEND_TIMEOUT_MS)).send(any(MimeMessage.class));
+    }
+
+    /**
+     * Guards the reason {@link MailService} schedules its work on {@code boundedElastic}.
+     *
+     * <p>Every caller is a reactive handler on a Netty event loop, and JavaMail is blocking. Before this was fixed the
+     * SMTP conversation ran on the subscribing thread: against a real relay that was measured at 2.8 seconds on an
+     * event loop thread in production, blocking every other request on it. The code looked asynchronous — the work was
+     * wrapped in {@code Mono.defer(...).subscribe()} — but without a scheduler that runs inline.</p>
+     *
+     * <p>BlockHound cannot catch this here, because {@code javaMailSender} is mocked and never touches a socket, so
+     * this asserts the property directly: the send must not happen on the thread that asked for it.</p>
+     */
+    @Test
+    void testSendEmailRunsOffTheCallingThread() throws InterruptedException {
+        AtomicReference<String> sendingThread = new AtomicReference<>();
+        CountDownLatch sent = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            sendingThread.set(Thread.currentThread().getName());
+            sent.countDown();
+            return null;
+        })
+            .when(javaMailSender)
+            .send(any(MimeMessage.class));
+
+        String callingThread = Thread.currentThread().getName();
+        mailService.sendEmail("john.doe@example.com", "testSubject", "testContent", false, false);
+
+        assertThat(sent.await(5, TimeUnit.SECONDS)).as("the email was never sent").isTrue();
+        assertThat(sendingThread.get()).isNotEqualTo(callingThread);
+        assertThat(sendingThread.get()).startsWith("boundedElastic-");
     }
 
     @Test
@@ -204,7 +247,7 @@ class MailServiceIT {
         for (String langKey : languages) {
             user.setLangKey(langKey);
             mailService.sendEmailFromTemplate(user, "mail/testEmail", "email.test.title");
-            verify(javaMailSender, atLeastOnce()).send(messageCaptor.capture());
+            verify(javaMailSender, timeout(SEND_TIMEOUT_MS).atLeastOnce()).send(messageCaptor.capture());
             MimeMessage message = messageCaptor.getValue();
 
             String propertyFilePath = "i18n/messages_" + getMessageSourceSuffixForLanguage(langKey) + ".properties";

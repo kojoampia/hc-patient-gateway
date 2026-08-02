@@ -26,6 +26,20 @@ Status legend: `[x]` done · `[~]` partial / diverges from plan · `[ ]` not sta
 
 ## Phase A — platform hygiene
 
+> **Fixed 2026-08-02 — mail was blocking the event loop.** `MailService` wrapped each send in
+> `Mono.defer(...).subscribe()` with no scheduler, which runs the work inline on the subscribing
+> thread. Every caller is a reactive handler on a Netty event loop, and JavaMail is blocking, so the
+> SMTP conversation ran _on the event loop_: measured at **2.8s on `ntLoopGroup-4-3`** against the
+> real relay in production, stalling every other request on that thread. The code read as
+> asynchronous, which is what kept it invisible.
+>
+> BlockHound did not catch it, and would not have: `MailServiceIT` mocks `JavaMailSender`, so no
+> socket is opened and nothing blocks during the tests. `testSendEmailRunsOffTheCallingThread` asserts
+> the property directly instead — it was confirmed to fail against the old code before being kept.
+>
+> Note for whoever touches the siblings: **`hc-admin` and `hc-professional` have the identical
+> defect**, byte-for-byte. It is the generated JHipster reactive `MailService`, not a local edit.
+
 > **Fixed 2026-08-02 — seeded credentials reached production.** From the first deploy until this fix,
 > `https://patient.abofonsa.com` accepted `admin` / `Admin@01234`, along with `user`, `patient` and
 > `angel` on the same derivation. The cause was structural rather than an oversight in one file: the
