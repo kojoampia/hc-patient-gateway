@@ -57,7 +57,7 @@ Statements below are split between **current** (true of the code today) and **ta
 
 ## Technology Stack
 
-- Java 26 target, Enforcer `[17,27)`, Maven ≥ 3.2.5.
+- Java 25 target (`maven.compiler.release`), Enforcer `[17,26)`, Maven ≥ 3.2.5.
 - Spring Boot 4.0.6, Spring Cloud 2025.1.1, `tech.jhipster:jhipster-framework` 9.0.0 (no full JHipster BOM — the app moved to Spring Boot 4 ahead of the generator).
 - Spring WebFlux, Spring Cloud Gateway, Spring Security (JWT), reactive Spring Data MongoDB, Mongock 5.5.1, Spring Cloud Stream Kafka binder, Spring Cloud Consul, Resilience4j, MapStruct.
 - JUnit 5, Mockito, ArchUnit, BlockHound, Testcontainers (MongoDB + Kafka).

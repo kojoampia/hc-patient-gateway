@@ -4,13 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Health Connect Patient Gateway (`patientGateway`) — a JHipster **gateway** application that fronts the patient subsystem: it authenticates users, owns all account/user data, and routes traffic to Consul-discovered microservices. Backend-only (`skipClient: true`, no `src/main/webapp`). Package root: `net.jojoaddison`. Server port `5503`.
+Health Connect Patient Gateway (`patientGateway`) — a JHipster **gateway** application that fronts the patient subsystem: it authenticates users, owns all account/user data, and routes traffic to Consul-discovered microservices. Backend-only (`skipClient: true`, no `src/main/webapp`). Package root: `net.jojoaddison`. Server port `5505`.
 
 Stack as actually configured in `pom.xml` / `.yo-rc.json`:
 
 |                  |                                                                                                           |
 | ---------------- | --------------------------------------------------------------------------------------------------------- |
-| Java             | 26 (`java.version`); Maven Enforcer accepts JDK `[17,27)`, Maven ≥ 3.2.5                                  |
+| Java             | 25 (`java.version`, and `maven.compiler.release`); Maven Enforcer accepts JDK `[17,26)`, Maven ≥ 3.2.5    |
 | Framework        | Spring Boot 4.0.6, Spring Cloud 2025.1.1, `tech.jhipster:jhipster-framework` 9.0.0 (no full JHipster BOM) |
 | Web stack        | Spring WebFlux + Spring Cloud Gateway — **reactive throughout**                                           |
 | Datastore        | MongoDB (`mongodb://localhost:27017/patientGateway`), Mongock 5.5.1 migrations                            |
@@ -30,7 +30,7 @@ Sibling plans: `hc-patient-service/patient-api.md`, `hc-patient-dashboard/patien
 ## Role in the subsystem
 
 ```
-browser (hc-patient-dashboard, ng serve :4200) → this gateway :5503 → Consul discovery
+browser (hc-patient-dashboard, ng serve :4200) → this gateway :5505 → Consul discovery
                                                     /services/hcpatientservice/** → hc-patient-service :8081
 ```
 
@@ -91,7 +91,7 @@ Security rules, the anonymous/admin path lists, seed data, and the endpoint inve
 ## Constraints
 
 - **Reactive only.** Controllers and services return `Mono`/`Flux`; no blocking calls. BlockHound will fail the build.
-- Java stays within the Enforcer range `[17,27)`; the build targets 26.
+- Java stays within the Enforcer range `[17,26)`; the build targets 25, pinned with `maven.compiler.release` so the API surface matches the bytecode level whichever JDK builds it.
 - Don't bypass the JHipster alert-header/exception-translation conventions in `web/rest/errors`.
 - Respect the ArchUnit layer boundaries.
 - `angular.json` is an inert leftover (no client here), and `deploy.sh`/`build-deploy.sh` are stale copies from the admin gateway that tag/push `admingateway` — don't run them expecting a patient-gateway image.

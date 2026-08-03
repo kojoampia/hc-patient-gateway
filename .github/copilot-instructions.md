@@ -41,7 +41,7 @@
 
 ## Conventions
 
-- The build targets Java 26 (`java.version`); the Maven Enforcer accepts JDK 17-26 (`[17,27)`). Maven must be >= 3.2.5.
+- The build targets Java 25 (`java.version`, pinned via `maven.compiler.release`); the Maven Enforcer accepts JDK 17-25 (`[17,26)`). Maven must be >= 3.2.5.
 - Use profile-driven runs/builds (`dev` default, `prod` for release artifacts).
 - Integration test naming follows Maven defaults:
   - Unit tests: `*Test.java`

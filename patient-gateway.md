@@ -2,11 +2,72 @@
 
 Single plan of record for `hc-patient-gateway` (`patientGateway`). It consolidates the test-coverage backlog that used to live in the now-deleted `missing-test-cases.md` with the gateway-side slices of the Health Connect patient blueprint/checklist and the repo hygiene items found while auditing this service.
 
-- **Baseline verified:** 2026-07-30 against `pom.xml`, `.yo-rc.json`, `src/main/java`, `src/test/java`, `src/main/resources/config`.
+- **Baseline verified:** 2026-08-03 against `pom.xml`, `.yo-rc.json`, `src/main/java`, `src/test/java`, `src/main/resources/config`. (Previous baseline 2026-07-30.)
 - **Companion docs:** `CLAUDE.md` (what exists and how it is wired), `AGENTS.md` (standing expectations), `README.md` (endpoint inventory, security rules, seed data).
 - **Sibling plans:** `hc-patient-service/patient-api.md`, `hc-patient-dashboard/patient-web.md`.
 
 Status legend: `[x]` done · `[~]` partial / diverges from plan · `[ ]` not started.
+
+## What changed since the last baseline
+
+### The server port moved to 5505 (branch `chore/gateway-port-5505`, 2026-08-03)
+
+The gateway listened on **5503** while the dashboard's dev proxy had always targeted **5505**
+(`webpack/proxy.conf.js`, `webpack/environment.js`). `npm start` therefore reached nothing until a
+developer discovered the mismatch — it was decision 1 in `hc-patient-dashboard/patient-web.md`.
+
+Resolved by moving the gateway rather than the proxy, and moving it **everywhere** rather than in
+dev only, so there is no dev/prod split left to trip over:
+
+- this repo — `application-dev.yml` (`server.port` and `jhipster.mail.base-url`),
+  `application-prod.yml`, the Jib container port in `pom.xml`, `.yo-rc.json` `serverPort`,
+  `package.json` `config.backend_port`, `src/main/docker/app.yml`, the local Prometheus scrape
+  target, and `.devcontainer/devcontainer.json`
+- `hc-patient/deploy` — the four nginx upstreams in `docker/web-nginx.conf`, the compose port map,
+  `docker/gateway.Dockerfile` (`EXPOSE` and its health check), `prod-server/compose.yml`'s health
+  check, and the readiness probe in `deploy.sh`
+
+`.yo-rc.json` was changed deliberately: it is the value the generator writes into both profiles, so
+leaving it at 5503 would have let a regeneration silently undo this.
+
+**This needs a `./deploy.sh` to take effect on `patient.abofonsa.com`.** Until the stack is
+redeployed, the running web container's nginx still proxies to 5503 and the gateway image still
+listens there — they are consistent with each other, so the site keeps working; it is only the
+combination of a new image with an old nginx config (or vice versa) that would break. Deploy both
+together, which `deploy.sh` does.
+
+### The Java target moved 26 → 25 (2026-08-04)
+
+`java.version` is now **25**, along with the Enforcer range (`[17,26)`), the Jib base image
+(`eclipse-temurin:25-jre`) and `deploy/docker/gateway.Dockerfile`'s build and runtime stages.
+
+What prompted it: the whole test suite failed with
+`ServiceConfigurationError: ... BlockHoundTestExecutionListener could not be instantiated`, which
+looks like a BlockHound problem and is not one. The project compiled to class-file **v70** (Java 26)
+while `JAVA_HOME` pointed at a Java 25 **JRE** that reads at most v69, so the first project class the
+JVM touched threw `UnsupportedClassVersionError`. BlockHound loads `JHipsterBlockHoundIntegration`
+through `ServiceLoader` in its static initialiser, so it was simply first in line — the count was
+`Tests run: 0`, not a set of failures.
+
+Two things were changed beyond the version number:
+
+- **`maven.compiler.release` is now set** (it was `source`/`target` only). Those set the bytecode
+  level but still compile against the _building_ JDK's class library, so a build on a newer JDK can
+  link an API the runtime does not have — the same class of mismatch, discovered at runtime instead
+  of compile time. `release` pins the API surface too.
+- Modernizer needed no change: its `<javaVersion>` already follows `${java.version}`. The 2.7.0 →
+  3.5.0 bump stays — it was made because 2.7.0 could not read Java 26 bytecode, and 3.5.0 reads 25
+  perfectly well.
+
+Verified on a real JDK 25: `./mvnw clean verify` — **112 tests, 0 failures, 0 Checkstyle violations**,
+and `BlockHoundTestExecutionListener` instantiates on the JRE 25 that previously could not load it.
+
+For reference, BlockHound's own JDK constraint is unrelated to the above and already satisfied here:
+from **JDK 13 onward it requires `-XX:+AllowRedefinitionToAddDeleteMethods`** (reactor/BlockHound#33),
+which this pom sets in both the surefire and failsafe `argLine`. On JDK 26 it also warns that dynamic
+agent loading will be disallowed in a future release and that it calls the terminally deprecated
+`sun.misc.Unsafe::objectFieldOffset` — that is where BlockHound will eventually break, so check it
+before the next JDK bump.
 
 ## Open decisions
 
@@ -22,7 +83,7 @@ Status legend: `[x]` done · `[~]` partial / diverges from plan · `[ ]` not sta
 - `[x]` Discovery-based routing: `/services/{serviceId}/**` → `/**` downstream, with the `JWTRelay` default filter.
 - `[x]` Route inspection (`GET /api/gateway/routes`) and the Kafka bridge (`/api/patient-gateway-kafka`).
 - `[x]` Seeding, in three parts since the credentials fix (2026-08-02). Two idempotent Mongock change units seed **authorities only, in every profile**: `InitialSetupMigration` (001) `ROLE_USER`/`ROLE_ADMIN`, `PatientRolesMigration` (002) `ROLE_PATIENT`/`ROLE_ANGEL` — a second change unit rather than an edit to 001, so databases that already ran 001 still get the new roles. `DevSeedDataInitializer` seeds the `admin`/`user`/`patient`/`angel` accounts under `dev`/`test` only, with passwords derived per login by `SeedData`. `AdminBootstrapInitializer` creates the first administrator in any profile from `gateway.admin.password` (`GATEWAY_ADMIN_PASSWORD`), which has **no default**; unset, nothing is created and it warns. Passwords are never logged. The change units create no accounts because Mongock has no notion of a profile — see the incident note below.
-- `[x]` Spring Boot 4.0.6 / Java 26 upgrade, reactive throughout, BlockHound active in tests.
+- `[x]` Spring Boot 4.0.6 upgrade, reactive throughout, BlockHound active in tests. Java target moved 26 → **25** on 2026-08-04 (see below).
 
 ## Phase A — platform hygiene
 
@@ -60,6 +121,7 @@ Status legend: `[x]` done · `[~]` partial / diverges from plan · `[ ]` not sta
 - `[ ]` **Align the JWT signing key with `hc-patient-service`.** The `base64-secret` committed here differs from the microservice's in both `application-dev.yml` and `application-prod.yml`, so relayed tokens fail signature validation downstream. Source both from one env var / Consul KV entry and drop the committed values.
 - `[ ]` Fix or delete `deploy.sh` and `build-deploy.sh`: both were copied from the admin gateway and still tag/push `admingateway` and expect a `br-admin-gateway` directory.
 - `[ ]` Delete the leftover `angular.json` — `skipClient: true`, there is no `src/main/webapp`, and it builds nothing.
+- `[ ]` Delete the leftover `webpack/` directory (`environment.js`, `proxy.conf.js`, `webpack.custom.js`, `logo-jhipster.png`) for the same reason — it is tracked, and nothing in a `skipClient` app reads it. Worth noting before deleting: its `proxy.conf.js` already targeted **5505**, which is corroboration that 5505 was the gateway's intended port all along and 5503 was the drift.
 - `[ ]` Wire CI. No workflows exist in `.github/`; `ci:backend:test` and `ci:server:await:patientgateway` are unused entry points. The dashboard repo publishes to GHCR — mirror or justify a different target.
 - `[ ]` Decide the API-docs posture: OpenAPI is only served when the `api-docs` profile is active, and `/v3/api-docs/**` additionally requires `ROLE_ADMIN`.
 - `[ ]` Confirm mail configuration per environment — account activation and password reset silently depend on a working `JavaMailSender` (`application-*.yml` `spring.mail` on port 25).

@@ -8,7 +8,7 @@ Values below come from `pom.xml` and `.yo-rc.json`:
 
 | Component        | Version / choice                                                                   |
 | ---------------- | ---------------------------------------------------------------------------------- |
-| Java             | 26 (`java.version`); Maven Enforcer allows 17–26 (`[17,27)`), Maven ≥ 3.2.5        |
+| Java             | 25 (`java.version`); Maven Enforcer allows 17–25 (`[17,26)`), Maven ≥ 3.2.5        |
 | Framework        | Spring Boot 4.0.6, Spring Cloud 2025.1.1, `tech.jhipster:jhipster-framework` 9.0.0 |
 | Web stack        | Spring WebFlux + Spring Cloud Gateway (**reactive throughout**)                    |
 | Security         | Spring Security, JWT resource server                                               |
@@ -35,7 +35,7 @@ There is **no generated frontend app** in this repository (`skipClient: true`, n
 
 ## Runtime defaults
 
-- **Application port:** `5503`
+- **Application port:** `5505`
 - **Spring application name:** `patientGateway`
 - **Consul:** `http://localhost:8500`
 - **MongoDB:** `mongodb://localhost:27017/patientGateway`

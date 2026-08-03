@@ -23,7 +23,7 @@
     "prodDatabaseType": "mongodb",
     "reactive": true,
     "searchEngine": false,
-    "serverPort": "5503",
+    "serverPort": "5505",
     "serverSideOptions": ["messageBroker:kafka"],
     "serviceDiscoveryType": "consul",
     "skipClient": true,
