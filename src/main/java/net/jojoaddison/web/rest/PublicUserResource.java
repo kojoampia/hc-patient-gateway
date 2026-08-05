@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import net.jojoaddison.security.AuthoritiesConstants;
 import net.jojoaddison.service.UserService;
 import net.jojoaddison.service.dto.UserDTO;
 import org.slf4j.Logger;
@@ -13,6 +14,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.server.reactive.ServerHttpRequest;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.util.ForwardedHeaderUtils;
 import reactor.core.publisher.Flux;
@@ -36,13 +38,25 @@ public class PublicUserResource {
     }
 
     /**
-     * {@code GET /users} : get all users with only public information - calling this method is allowed for anyone.
+     * {@code GET /users} : get all users with only public information.
+     *
+     * <p><strong>Administrators only since 2026-08-05.</strong> The name and the generated Javadoc both said "allowed
+     * for anyone", and under {@code /api/**} that meant every authenticated account could page through the login of
+     * every activated user on the platform. The DTO is minimal — id and login, which is the right choice — but a
+     * complete list of valid logins is exactly the input a credential-stuffing run wants, and self-registration is
+     * open to the internet.</p>
+     *
+     * <p>Nothing in the patient dashboard calls this; its user-management screens use {@code /api/admin/users}. It is
+     * restricted rather than deleted because it is a generated JHipster seam and a future user-picker is the obvious
+     * reason it exists — if that picker is ever built, give it a minimum-length prefix search rather than reopening a
+     * full listing.</p>
      *
      * @param request a {@link ServerHttpRequest} request.
      * @param pageable the pagination information.
      * @return the {@link ResponseEntity} with status {@code 200 (OK)} and with body all users.
      */
     @GetMapping("/users")
+    @PreAuthorize("hasAuthority(\"" + AuthoritiesConstants.ADMIN + "\")")
     public Mono<ResponseEntity<Flux<UserDTO>>> getAllPublicUsers(
         ServerHttpRequest request,
         @org.springdoc.core.annotations.ParameterObject Pageable pageable
