@@ -63,6 +63,11 @@ jobs:
   scan:
     name: Dependency and secret scan
     runs-on: ubuntu-latest
+    env:
+      # Mapped at job level so every step's `if:` can test it without repeating the mapping. It is
+      # empty when the secret is not configured, and that emptiness is what gates the
+      # dependency-check steps below.
+      NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -88,16 +93,45 @@ jobs:
       # To turn it on: request a key at https://nvd.nist.gov/developers/request-an-api-key and add
       # it as the repository secret NVD_API_KEY. The step then runs, and once its findings are
       # triaged `continue-on-error` can come off too.
+      # The NVD dataset is on the order of a gigabyte and dependency-check downloads all of it on a
+      # cold start — ten to thirty minutes, every run, which is enough to make people delete the job.
+      # Restoring it turns that into an incremental update measured in seconds.
+      #
+      # Keyed by ISO week rather than by day, and that is a deliberate trade rather than laziness:
+      # the cache is only a STARTING POINT, because every run still pulls incremental updates from
+      # NVD using the key above. So a week-old cache does not mean week-old vulnerability data — it
+      # means a shorter download. A daily key would save ~1 GB every day against a repository
+      # allowance of 10 GB, and spend most of that allowance re-storing data that had not changed.
+      #
+      # restore-keys falls back to the most recent previous week when the exact key misses, so the
+      # first run of a new week still starts from a warm dataset instead of from nothing.
+      - name: Work out the NVD cache week
+        if: env.NVD_API_KEY != ''
+        id: nvd-cache
+        run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the NVD dataset
+        if: env.NVD_API_KEY != ''
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.dependency-check-data
+          key: dependency-check-data-${{ runner.os }}-${{ steps.nvd-cache.outputs.week }}
+          restore-keys: dependency-check-data-${{ runner.os }}-
+
+      # dataDirectory is set explicitly rather than left to the plugin default
+      # (~/.m2/repository/org/owasp/dependency-check-data). The default is a documented behaviour of
+      # the plugin rather than a promise, and a cache whose path silently stops matching where the
+      # data is written fails the worst way available: quietly, by restoring nothing and downloading
+      # everything, while still reporting success.
       - name: Dependency vulnerabilities
         if: env.NVD_API_KEY != ''
         continue-on-error: true
-        env:
-          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: >-
           ./mvnw --batch-mode --no-transfer-progress
           org.owasp:dependency-check-maven:check
           -DfailBuildOnCVSS=7
           -DassemblyAnalyzerEnabled=false
+          -DdataDirectory="$GITHUB_WORKSPACE/.dependency-check-data"
           -DnvdApiKey="$NVD_API_KEY"
 
       - name: Upload dependency report

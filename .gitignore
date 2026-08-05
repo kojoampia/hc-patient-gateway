@@ -154,3 +154,7 @@ Desktop.ini
 ######################
 /coverage/
 /.nyc_output/
+
+# dependency-check NVD dataset. CI points -DdataDirectory here so actions/cache can restore it
+# across runs; a local run with the same flag would otherwise drop ~1 GB into the working tree.
+/.dependency-check-data/
