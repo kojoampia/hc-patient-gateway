@@ -5,6 +5,7 @@ import java.util.Objects;
 import net.jojoaddison.repository.UserRepository;
 import net.jojoaddison.security.SecurityUtils;
 import net.jojoaddison.service.MailService;
+import net.jojoaddison.service.TokenRevocationService;
 import net.jojoaddison.service.UserService;
 import net.jojoaddison.service.dto.AdminUserDTO;
 import net.jojoaddison.service.dto.PasswordChangeDTO;
@@ -15,6 +16,8 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
@@ -40,10 +43,18 @@ public class AccountResource {
 
     private final MailService mailService;
 
-    public AccountResource(UserRepository userRepository, UserService userService, MailService mailService) {
+    private final TokenRevocationService tokenRevocationService;
+
+    public AccountResource(
+        UserRepository userRepository,
+        UserService userService,
+        MailService mailService,
+        TokenRevocationService tokenRevocationService
+    ) {
         this.userRepository = userRepository;
         this.userService = userService;
         this.mailService = mailService;
+        this.tokenRevocationService = tokenRevocationService;
     }
 
     /**
@@ -177,6 +188,27 @@ public class AccountResource {
             .completePasswordReset(keyAndPassword.getNewPassword(), keyAndPassword.getKey())
             .switchIfEmpty(Mono.error(new AccountResourceException("No user was found for this reset key")))
             .then();
+    }
+
+    /**
+     * {@code POST  /account/logout} : revoke the token this request was made with.
+     *
+     * <p>Before 2026-08-05 there was no such thing. Authentication is stateless and signing out was a client-side
+     * {@code localStorage.removeItem}, so a "signed-out" token stayed valid until it expired — which is fine right up
+     * until the reason for signing out is that somebody else has the token.</p>
+     *
+     * <p>Idempotent, and it answers 200 whatever happens. Revoking an already-revoked token is a no-op, and a token
+     * that carries no {@code jti} (minted before this existed) cannot be revoked at all — telling the caller that
+     * would only leak which tokens are old, and there is nothing they could do about it.</p>
+     *
+     * @return completion.
+     */
+    @PostMapping("/account/logout")
+    public Mono<Void> logout(@AuthenticationPrincipal Jwt jwt) {
+        if (jwt == null) {
+            return Mono.empty();
+        }
+        return tokenRevocationService.revoke(jwt.getId(), jwt.getExpiresAt());
     }
 
     private static boolean isPasswordLengthInvalid(String password) {

@@ -8,6 +8,7 @@ import com.nimbusds.jose.util.Base64;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import net.jojoaddison.management.SecurityMetersService;
+import net.jojoaddison.service.TokenRevocationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,6 +23,7 @@ import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.oauth2.server.resource.authentication.ReactiveJwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.ReactiveJwtGrantedAuthoritiesConverterAdapter;
+import reactor.core.publisher.Mono;
 
 @Configuration
 public class SecurityJwtConfiguration {
@@ -38,8 +40,11 @@ public class SecurityJwtConfiguration {
      */
     private final ApplicationProperties.Security.Jwt jwtProperties;
 
-    public SecurityJwtConfiguration(ApplicationProperties applicationProperties) {
+    private final TokenRevocationService tokenRevocationService;
+
+    public SecurityJwtConfiguration(ApplicationProperties applicationProperties, TokenRevocationService tokenRevocationService) {
         this.jwtProperties = applicationProperties.getSecurity().getJwt();
+        this.tokenRevocationService = tokenRevocationService;
     }
 
     @Bean
@@ -69,6 +74,23 @@ public class SecurityJwtConfiguration {
             try {
                 return jwtDecoder
                     .decode(token)
+                    // Revocation is checked HERE rather than in a filter because every request this gateway handles
+                    // decodes its token through this bean — both /api/** served locally and /services/** proxied
+                    // onward. A filter would have to be registered in two places and would eventually be registered
+                    // in one.
+                    .flatMap(
+                        jwt ->
+                            tokenRevocationService
+                                .isRevoked(jwt.getId())
+                                .flatMap(
+                                    revoked ->
+                                        Boolean.TRUE.equals(revoked)
+                                            ? Mono.<org.springframework.security.oauth2.jwt.Jwt>error(
+                                                new org.springframework.security.oauth2.jwt.BadJwtException("The token has been revoked")
+                                            )
+                                            : Mono.just(jwt)
+                                )
+                    )
                     .doOnError(e -> {
                         if (e.getMessage().contains("Jwt expired at")) {
                             metersService.trackTokenExpired();

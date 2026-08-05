@@ -9,6 +9,7 @@ import jakarta.validation.Valid;
 import java.security.Principal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import net.jojoaddison.domain.User;
 import net.jojoaddison.repository.UserRepository;
@@ -166,6 +167,9 @@ public class AuthenticateController {
 
         // @formatter:off
         JwtClaimsSet claims = JwtClaimsSet.builder()
+            // A per-token id, so a single session can be revoked without touching the signing key — which is shared
+            // with hc-admin and hc-professional, and rotating it would sign every one of their users out too.
+            .id(UUID.randomUUID().toString())
             .issuedAt(now)
             .expiresAt(validity)
             .subject(authentication.getName())

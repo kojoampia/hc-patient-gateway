@@ -28,6 +28,9 @@ import tech.jhipster.config.JHipsterProperties;
         // AuthenticateController is component-scanned into this context and now depends on
         // LoginAttemptService for per-account lockout, so the service has to be listed here too.
         LoginAttemptService.class,
+        // SecurityJwtConfiguration consults the revocation service on every decode; the real one needs a
+        // reactive Mongo repository and this context starts no database.
+        TokenRevocationStubConfiguration.class,
         SecurityMetersService.class,
         JwtAuthenticationTestUtils.class,
     }
