@@ -100,10 +100,26 @@ jhipster:
         # - In the Consul configserver
         # - In a separate `application-prod.yml` file, in the same folder as your executable JAR file
         # - In the `JHIPSTER_SECURITY_AUTHENTICATION_JWT_BASE64_SECRET` environment variable
-        base64-secret: ZmU1MWRiODU3MjFkNjUzNzU0Yjk4YTc5NTExN2EyZGM0ODI3ZGI1ZWI0ZjlmZmI2YzFiMTBjNTc5NGI1NTg1Njg1ODNlZjc1ZDgwMjVlNDg2MzM5ZWY0MjA1NzgxNDYwMDUzOTE4MDdmYTgwYjZiMjVjNzlmZjEyZGQxZjRmMjU=
-        # Token is valid 24 hours
-        token-validity-in-seconds: 86400
-        token-validity-in-seconds-for-remember-me: 2592000
+        # No default, deliberately. This used to be a committed literal — a 512-bit HMAC key, in the *production*
+        # profile, in a git repository — and the only thing standing between it and a live deployment was an
+        # environment variable set in one compose file. Any other environment running -Pprod signed tokens with a
+        # key published on GitHub.
+        #
+        # SecurityJwtConfiguration fails startup with an explicit message when this is blank, rather than
+        # constructing a zero-length key and failing later with something unreadable.
+        base64-secret: ${JWT_BASE64_SECRET:}
+        # Shortened 2026-08-05. Was 24 hours / 30 days.
+        #
+        # Authentication here is stateless: no jti, no blocklist, no server-side session, and logout is a client-side
+        # localStorage.removeItem. Nothing can revoke a token before it expires, so its lifetime IS the exposure
+        # window for a stolen one — and the same signing key is shared with hc-admin and hc-professional, so that
+        # window spans all three products. A month of it for health records was not a defensible number.
+        #
+        # 1 hour, and 7 days for "remember me". Real revocation (a jti claim plus a small blocklist collection both
+        # decoders consult, or refresh tokens) is the actual fix and is tracked separately; this is the part that
+        # costs nothing and shrinks the window by 97%.
+        token-validity-in-seconds: 3600
+        token-validity-in-seconds-for-remember-me: 604800
   mail: # specific JHipster mail property, for standard properties see MailProperties
     base-url: http://my-server-url-to-change # Modify according to your server's URL
   logging:

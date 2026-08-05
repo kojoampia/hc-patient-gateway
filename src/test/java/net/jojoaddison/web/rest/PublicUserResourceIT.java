@@ -59,4 +59,19 @@ class PublicUserResourceIT {
 
         assertThat(foundUser.getLogin()).isEqualTo(DEFAULT_LOGIN);
     }
+
+    /**
+     * An ordinary account must not be able to enumerate logins.
+     *
+     * <p>This endpoint was reachable by every authenticated caller until 2026-08-05 — its name and its generated
+     * Javadoc both said "allowed for anyone" — which handed anyone who registered a complete list of valid logins to
+     * aim a credential-stuffing run at. Registration is open to the internet, so that was a low bar.</p>
+     */
+    @Test
+    @WithMockUser(authorities = AuthoritiesConstants.USER)
+    void getAllPublicUsersIsForbiddenForOrdinaryUsers() {
+        userRepository.save(user).block();
+
+        webTestClient.get().uri("/api/users?sort=id,desc").accept(MediaType.APPLICATION_JSON).exchange().expectStatus().isForbidden();
+    }
 }

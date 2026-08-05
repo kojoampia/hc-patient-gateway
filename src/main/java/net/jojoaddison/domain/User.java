@@ -74,6 +74,23 @@ public class User extends AbstractAuditingEntity<String> implements Serializable
     @Field("reset_date")
     private Instant resetDate = null;
 
+    /**
+     * Consecutive failed sign-in attempts, reset to zero by any success.
+     *
+     * <p>Added 2026-08-05 with per-account lockout. The nginx rate limit added at the same time keys on the source
+     * address, which stops one host hammering one account and does nothing about the same guess arriving from a
+     * thousand addresses — the shape credential stuffing actually takes. This counter is what sees that, because it
+     * follows the account rather than the connection.</p>
+     */
+    @Field("failed_login_attempts")
+    @JsonIgnore
+    private int failedLoginAttempts = 0;
+
+    /** When the account stops being locked, or null if it is not. */
+    @Field("locked_until")
+    @JsonIgnore
+    private Instant lockedUntil = null;
+
     @JsonIgnore
     private Set<Authority> authorities = new HashSet<>();
 
@@ -172,6 +189,22 @@ public class User extends AbstractAuditingEntity<String> implements Serializable
 
     public void setLangKey(String langKey) {
         this.langKey = langKey;
+    }
+
+    public int getFailedLoginAttempts() {
+        return failedLoginAttempts;
+    }
+
+    public void setFailedLoginAttempts(int failedLoginAttempts) {
+        this.failedLoginAttempts = failedLoginAttempts;
+    }
+
+    public Instant getLockedUntil() {
+        return lockedUntil;
+    }
+
+    public void setLockedUntil(Instant lockedUntil) {
+        this.lockedUntil = lockedUntil;
     }
 
     public Set<Authority> getAuthorities() {

@@ -19,6 +19,15 @@ public final class SecurityUtils {
 
     public static final String AUTHORITIES_KEY = "auth";
 
+    /**
+     * Claim carrying the account's email address.
+     *
+     * <p>This gateway owns user management; the patient microservice does not, and email is the only identifier the
+     * two systems share — it is how a signed-in account is resolved to a Profile and thence to the patientId that
+     * scopes every query downstream. Renaming this constant is a breaking change across both services.</p>
+     */
+    public static final String EMAIL_KEY = "email";
+
     private SecurityUtils() {}
 
     /**
