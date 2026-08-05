@@ -1,0 +1,42 @@
+# gitleaks configuration for hc-patient-gateway.
+#
+# Written 2026-08-05 alongside the secret scan in .github/workflows/build.yml. Its job is to stop the
+# scan failing forever on secrets that are real, already burned, and impossible to remove — so that a
+# failure means something new rather than something known.
+#
+# THE RULE FOR ADDING ANYTHING HERE: a value belongs in this file only if it is provably dead — it
+# has been replaced everywhere it was used, and it cannot authenticate anything. "It's only a
+# development key" is not sufficient on its own; say where it is used and why that is safe.
+
+title = "hc-patient secret scanning"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known-dead credentials that remain in git history"
+
+paths = [
+  # JHipster's generated self-signed development keystore, deleted 2026-08-05. Self-signed,
+  # development-only, and its password was the literal string "password" — it protected nothing, and
+  # production TLS terminates at the host nginx with a real certificate.
+  '''src/main/resources/config/tls/keystore\.p12''',
+]
+
+regexes = [
+  # The two 512-bit HMAC signing keys that were committed in application-dev.yml, application-prod.yml
+  # and .yo-rc.json until 2026-08-05. Both are burned: production now reads JWT_BASE64_SECRET from the
+  # environment and both services refuse to start without it. They are allowlisted rather than purged
+  # because rewriting history across two published repositories is not worth it for values that can no
+  # longer authenticate anything — but they must NEVER be reused, which is why they are named here
+  # rather than pattern-matched away.
+  '''ZjJjMjE3YWJlOGFlZjBjODViMmRhZjE3ZGIzOGViMTIwNjBhZTdhMWEzOTA0YjM3ZDE5Njc5NTIwZjhjOWFlZTdjMjcyMzk1MDg1ZWIzY2FkYWI2N2M2YWZiYTkzN2EzYWZhNTczMjdmNzAxNzI3ODhkMDcwMzgwZjZkY2I3MGU=''',
+  '''ZmU1MWRiODU3MjFkNjUzNzU0Yjk4YTc5NTExN2EyZGM0ODI3ZGI1ZWI0ZjlmZmI2YzFiMTBjNTc5NGI1NTg1Njg1ODNlZjc1ZDgwMjVlNDg2MzM5ZWY0MjA1NzgxNDYwMDUzOTE4MDdmYTgwYjZiMjVjNzlmZjEyZGQxZjRmMjU=''',
+
+  # The development and test signing key, which IS still in the working tree and is meant to be. It is
+  # committed on purpose so `./mvnw` works with no setup, it is identical in both backends so a
+  # gateway-minted token validates at the microservice in development, and it is public by
+  # construction — a committed key is not a secret. Production never sees it: application-prod.yml
+  # reads ${JWT_BASE64_SECRET:} and startup fails when that is blank.
+  '''G5oVDNDxRIh5PtBW0J\+79wSUU4KuLJsDcXyo36DsTGIjSwVWjQBAXOXrCPDjf8RKqfghIRoBi2/H1IbqyAfasg==''',
+]

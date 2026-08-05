@@ -79,6 +79,12 @@ jobs:
 
       # Known-vulnerable Java dependencies. Spring Boot 4.0.6 and Spring Cloud 2025.1.1 are current,
       # but nothing was checking, and "current today" has a short shelf life.
+      #
+      # Non-blocking until it has been run once and triaged. It could not be run while this was
+      # written: dependency-check needs the full NVD database, the locally cached copy was on an
+      # older schema, and downloading it is a CI-shaped job rather than a laptop-shaped one. Flip
+      # `continue-on-error` off once a run has been seen and any findings are either fixed or
+      # suppressed with a reason.
       - name: Dependency vulnerabilities
         continue-on-error: true
         run: >-
@@ -96,11 +102,18 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-      # Credentials committed by mistake. Expected to fire on this repo's history until the keys
-      # removed on 2026-08-05 are triaged and allowlisted — they are burned, not secret, and history
-      # rewriting is not worth it for two public repos.
+      # Credentials committed by mistake. .gitleaks.toml now allowlists the three known-dead keys —
+      # the two burned production signing keys still in history, and the development key that is
+      # committed on purpose — so a finding here should mean something new.
+      #
+      # STILL non-blocking, and this is the honest reason rather than a policy: gitleaks is not
+      # installed on the machine this was written on, so the allowlist has never actually been
+      # executed against this history. Flip `continue-on-error` off after one clean run. If that run
+      # is not clean, extend the allowlist — under the rule stated at the top of .gitleaks.toml — do
+      # not widen it to make the job green.
       - name: Secret scan
         continue-on-error: true
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
