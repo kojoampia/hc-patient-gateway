@@ -12,6 +12,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.stream.Collectors;
 import net.jojoaddison.domain.User;
 import net.jojoaddison.repository.UserRepository;
+import net.jojoaddison.service.LoginAttemptService;
 import net.jojoaddison.web.rest.vm.LoginVM;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,6 +20,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.ReactiveAuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -65,39 +67,64 @@ public class AuthenticateController {
 
     private final UserRepository userRepository;
 
+    private final LoginAttemptService loginAttemptService;
+
     public AuthenticateController(
         JwtEncoder jwtEncoder,
         ReactiveAuthenticationManager authenticationManager,
-        UserRepository userRepository
+        UserRepository userRepository,
+        LoginAttemptService loginAttemptService
     ) {
         this.jwtEncoder = jwtEncoder;
         this.authenticationManager = authenticationManager;
         this.userRepository = userRepository;
+        this.loginAttemptService = loginAttemptService;
     }
 
     @PostMapping("/authenticate")
     public Mono<ResponseEntity<JWTToken>> authorize(@Valid @RequestBody Mono<LoginVM> loginVM) {
         return loginVM
             .flatMap(login ->
-                authenticationManager
-                    .authenticate(new UsernamePasswordAuthenticationToken(login.getUsername(), login.getPassword()))
-                    // The email is looked up here rather than carried on the principal because
-                    // DomainUserDetailsService builds a stock Spring Security User, which has no
-                    // room for it. One extra read per login is not a cost worth designing around.
-                    .flatMap(auth ->
-                        userRepository
-                            .findOneByLogin(auth.getName())
-                            .mapNotNull(User::getEmail)
-                            // An account with no email still gets a token, just an unscoped one.
-                            // The microservice treats a missing email claim as "no patient
-                            // records at all", which fails closed.
-                            .defaultIfEmpty("")
-                            .map(email -> this.createToken(auth, email, login.isRememberMe()))))
+                // Checked before the password is, so a locked account costs an attacker one cheap lookup rather than a
+                // BCrypt verification — which is the other reason unlimited login attempts hurt: BCrypt is expensive by
+                // design and this gateway runs on a 256 MB heap on a shared host.
+                loginAttemptService
+                    .isLocked(login.getUsername())
+                    .flatMap(locked ->
+                        Boolean.TRUE.equals(locked)
+                            // The same 401 a wrong password gets. Saying "locked" would confirm the account exists,
+                            // and enumeration is what the attacker doing this is building towards.
+                            ? Mono.<String>error(new BadCredentialsException("Authentication failed"))
+                            : authenticateAndMint(login)))
             .map(jwt -> {
                 HttpHeaders httpHeaders = new HttpHeaders();
                 httpHeaders.setBearerAuth(jwt);
                 return new ResponseEntity<>(new JWTToken(jwt), httpHeaders, HttpStatus.OK);
             });
+    }
+
+    /**
+     * Verifies the password, records the outcome against the account, and mints the token on success.
+     *
+     * <p>The failure counter is updated on the error path rather than in an exception handler so that the two can
+     * never drift apart — a login that fails without being counted is a login that can be retried forever.</p>
+     */
+    private Mono<String> authenticateAndMint(LoginVM login) {
+        return authenticationManager
+            .authenticate(new UsernamePasswordAuthenticationToken(login.getUsername(), login.getPassword()))
+            .onErrorResume(error -> loginAttemptService.recordFailure(login.getUsername()).then(Mono.error(error)))
+            .flatMap(auth ->
+                loginAttemptService
+                    .recordSuccess(login.getUsername())
+                    .then(
+                        userRepository
+                            .findOneByLogin(auth.getName())
+                            .mapNotNull(User::getEmail)
+                            // An account with no email still gets a token, just an unscoped one. The microservice
+                            // treats a missing email claim as "no patient records at all", which fails closed.
+                            .defaultIfEmpty("")
+                            .map(email -> this.createToken(auth, email, login.isRememberMe()))
+                    ));
     }
 
     /**

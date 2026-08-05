@@ -8,6 +8,7 @@ import net.jojoaddison.config.SecurityConfiguration;
 import net.jojoaddison.config.SecurityJwtConfiguration;
 import net.jojoaddison.config.WebConfigurer;
 import net.jojoaddison.management.SecurityMetersService;
+import net.jojoaddison.service.LoginAttemptService;
 import net.jojoaddison.web.rest.AuthenticateController;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.security.autoconfigure.web.reactive.ReactiveWebSecurityAutoConfiguration;
@@ -24,6 +25,9 @@ import tech.jhipster.config.JHipsterProperties;
         WebConfigurer.class,
         SecurityConfiguration.class,
         SecurityJwtConfiguration.class,
+        // AuthenticateController is component-scanned into this context and now depends on
+        // LoginAttemptService for per-account lockout, so the service has to be listed here too.
+        LoginAttemptService.class,
         SecurityMetersService.class,
         JwtAuthenticationTestUtils.class,
     }
