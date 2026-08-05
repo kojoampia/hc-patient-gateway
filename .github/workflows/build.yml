@@ -80,18 +80,25 @@ jobs:
       # Known-vulnerable Java dependencies. Spring Boot 4.0.6 and Spring Cloud 2025.1.1 are current,
       # but nothing was checking, and "current today" has a short shelf life.
       #
-      # Non-blocking until it has been run once and triaged. It could not be run while this was
-      # written: dependency-check needs the full NVD database, the locally cached copy was on an
-      # older schema, and downloading it is a CI-shaped job rather than a laptop-shaped one. Flip
-      # `continue-on-error` off once a run has been seen and any findings are either fixed or
-      # suppressed with a reason.
+      # SKIPPED UNLESS AN NVD API KEY IS CONFIGURED. The first CI run showed why: NVD now rejects
+      # anonymous downloads outright — "Invalid API Key, length of 0" — so without a key this step
+      # cannot succeed, ever. A step that always fails teaches everyone to ignore the job it lives
+      # in, which costs more than the check is worth.
+      #
+      # To turn it on: request a key at https://nvd.nist.gov/developers/request-an-api-key and add
+      # it as the repository secret NVD_API_KEY. The step then runs, and once its findings are
+      # triaged `continue-on-error` can come off too.
       - name: Dependency vulnerabilities
+        if: env.NVD_API_KEY != ''
         continue-on-error: true
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: >-
           ./mvnw --batch-mode --no-transfer-progress
           org.owasp:dependency-check-maven:check
           -DfailBuildOnCVSS=7
           -DassemblyAnalyzerEnabled=false
+          -DnvdApiKey="$NVD_API_KEY"
 
       - name: Upload dependency report
         if: always()
@@ -106,13 +113,14 @@ jobs:
       # the two burned production signing keys still in history, and the development key that is
       # committed on purpose — so a finding here should mean something new.
       #
-      # STILL non-blocking, and this is the honest reason rather than a policy: gitleaks is not
-      # installed on the machine this was written on, so the allowlist has never actually been
-      # executed against this history. Flip `continue-on-error` off after one clean run. If that run
-      # is not clean, extend the allowlist — under the rule stated at the top of .gitleaks.toml — do
-      # not widen it to make the job green.
+      # BLOCKING as of the run on 6463ca4, which reported "no leaks found" with the allowlist loaded.
+      # If this fails, extend .gitleaks.toml under the rule stated at the top of that file — do not
+      # widen it to make the job green.
+      #
+      # Note what it actually scans: on a push the action examines the pushed commit range, not the
+      # whole history. That is the right default for a gate, but it means the allowlist entries for
+      # the burned keys only bite on a run that reaches back to them.
       - name: Secret scan
-        continue-on-error: true
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
