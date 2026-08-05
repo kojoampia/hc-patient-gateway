@@ -1,0 +1,106 @@
+# Build, test and scan hc-patient-gateway.
+#
+# There was no CI in this repository at all before 2026-08-05, which is how a gateway that shipped a
+# committed JWT signing key in its production profile stayed that way — the ArchUnit layer test, the
+# JWT tests, BlockHound and the whole integration suite ran only when somebody remembered to run them
+# locally.
+#
+# Scanning starts NON-BLOCKING (continue-on-error) on purpose. The dependency and secret scans will
+# light up on day one — the committed keys are in git history and cannot be removed from it — and a
+# job that is red on arrival is a job everybody learns to ignore. Triage the findings, then delete the
+# continue-on-error lines so this actually gates. That second step is the point; without it this file
+# is decoration.
+name: Build and scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 25, matching <java.version> in the pom. Note the Enforcer range is [17,26), which EXCLUDES 26 —
+      # the repo's CLAUDE.md claims java.version is 26, which would fail that rule outright; the pom is
+      # the authority and it says 25. BlockHound instruments the reactive threads during the *IT suite,
+      # so a build that passes on a different JDK is not evidence that this one does.
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: temurin
+          cache: maven
+
+      # The *IT suite starts MongoDB and Kafka through Testcontainers, so a working Docker daemon is
+      # the only service dependency — `npm run services:up` is deliberately NOT needed here.
+      - name: Build and test
+        run: ./mvnw --batch-mode --no-transfer-progress verify
+
+      - name: Publish test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            target/surefire-reports/
+            target/failsafe-reports/
+            target/site/jacoco-merged/
+          retention-days: 7
+
+  scan:
+    name: Dependency and secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Secret scanning needs history, not just the tip: the point is to find what was committed
+          # and later deleted, which is exactly the shape of this repo's JWT key.
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: temurin
+          cache: maven
+
+      # Known-vulnerable Java dependencies. Spring Boot 4.0.6 and Spring Cloud 2025.1.1 are current,
+      # but nothing was checking, and "current today" has a short shelf life.
+      - name: Dependency vulnerabilities
+        continue-on-error: true
+        run: >-
+          ./mvnw --batch-mode --no-transfer-progress
+          org.owasp:dependency-check-maven:check
+          -DfailBuildOnCVSS=7
+          -DassemblyAnalyzerEnabled=false
+
+      - name: Upload dependency report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-check-report
+          path: target/dependency-check-report.html
+          retention-days: 7
+          if-no-files-found: ignore
+
+      # Credentials committed by mistake. Expected to fire on this repo's history until the keys
+      # removed on 2026-08-05 are triaged and allowlisted — they are burned, not secret, and history
+      # rewriting is not worth it for two public repos.
+      - name: Secret scan
+        continue-on-error: true
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
