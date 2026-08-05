@@ -13,7 +13,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.jwt.NimbusReactiveJwtDecoder;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
@@ -29,9 +31,40 @@ public class SecurityJwtConfiguration {
     @Value("${jhipster.security.authentication.jwt.base64-secret}")
     private String jwtKey;
 
+    /**
+     * Origin-validation settings. Injected as typed properties rather than read with {@code @Value} because the
+     * {@code application.*} prefix is bound strictly — an unknown key there fails context startup rather than being
+     * ignored, so the binding has to be declared.
+     */
+    private final ApplicationProperties.Security.Jwt jwtProperties;
+
+    public SecurityJwtConfiguration(ApplicationProperties applicationProperties) {
+        this.jwtProperties = applicationProperties.getSecurity().getJwt();
+    }
+
     @Bean
     public ReactiveJwtDecoder jwtDecoder(SecurityMetersService metersService) {
         NimbusReactiveJwtDecoder jwtDecoder = NimbusReactiveJwtDecoder.withSecretKey(getSecretKey()).macAlgorithm(JWT_ALGORITHM).build();
+        if (jwtProperties.isValidateOrigin()) {
+            // Layered on top of the defaults rather than replacing them: a bare validator here would silently drop
+            // the expiry check, which is a worse hole than the one being closed.
+            jwtDecoder.setJwtValidator(
+                new DelegatingOAuth2TokenValidator<>(
+                    JwtValidators.createDefault(),
+                    new TokenOriginValidator(jwtProperties.getTrustedIssuers(), jwtProperties.getAudience())
+                )
+            );
+            log.info(
+                "JWT origin validation is ON: issuers {} audience '{}'",
+                jwtProperties.getTrustedIssuers(),
+                jwtProperties.getAudience()
+            );
+        } else {
+            log.info(
+                "JWT origin validation is OFF. A token minted by any product sharing this signing key is accepted. " +
+                "Enable with application.security.jwt.validate-origin=true once every issuer emits iss/aud."
+            );
+        }
         return token -> {
             try {
                 return jwtDecoder
