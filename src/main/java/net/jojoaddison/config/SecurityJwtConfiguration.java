@@ -83,6 +83,16 @@ public class SecurityJwtConfiguration {
     }
 
     private SecretKey getSecretKey() {
+        // Fail here, loudly, rather than build a zero-length key and fail somewhere unreadable later. The committed
+        // literal that used to live in application-prod.yml is gone (2026-08-05); production supplies the key through
+        // JWT_BASE64_SECRET, and an environment that forgets to set it must not start rather than start insecurely.
+        if (jwtKey == null || jwtKey.isBlank()) {
+            throw new IllegalStateException(
+                "jhipster.security.authentication.jwt.base64-secret is not set. Provide it via the " +
+                "JWT_BASE64_SECRET environment variable (openssl rand -base64 64). There is deliberately no default " +
+                "outside the dev and test profiles."
+            );
+        }
         byte[] keyBytes = Base64.from(jwtKey).decode();
         return new SecretKeySpec(keyBytes, 0, keyBytes.length, JWT_ALGORITHM.getName());
     }

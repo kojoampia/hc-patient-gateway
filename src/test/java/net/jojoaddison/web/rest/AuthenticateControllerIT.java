@@ -59,6 +59,68 @@ class AuthenticateControllerIT {
             .isNotEmpty();
     }
 
+    /**
+     * The token must carry the account's email.
+     *
+     * <p>This is not a cosmetic claim. {@code hc-patient-service} runs with {@code skipUserManagement} and has no
+     * User document of its own, so this claim is the only identity it receives that means anything in its data: it
+     * resolves email to a Profile and from there to the {@code patientId} that scopes every query. Drop the claim and
+     * that service does not fail loudly — it fails <em>closed</em>, and every patient sees an empty portal while the
+     * login still works perfectly. This assertion is the cheapest place to notice.</p>
+     */
+    @Test
+    void testAuthorizeCarriesTheEmailClaim() throws Exception {
+        User user = new User();
+        user.setLogin("user-jwt-email-claim");
+        user.setEmail("user-jwt-email-claim@example.com");
+        user.setActivated(true);
+        user.setPassword(passwordEncoder.encode("test"));
+
+        userRepository.save(user).block();
+
+        LoginVM login = new LoginVM();
+        login.setUsername("user-jwt-email-claim");
+        login.setPassword("test");
+
+        String body = new String(
+            webTestClient
+                .post()
+                .uri("/api/authenticate")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(om.writeValueAsBytes(login))
+                .exchange()
+                .expectStatus()
+                .isOk()
+                .expectBody()
+                .returnResult()
+                .getResponseBody(),
+            java.nio.charset.StandardCharsets.UTF_8
+        );
+
+        String idToken = om.readTree(body).get("id_token").asString();
+        // Decode the payload rather than trusting the encoder: base64url, middle segment.
+        String payload = new String(
+            java.util.Base64.getUrlDecoder().decode(idToken.split("\\.")[1]),
+            java.nio.charset.StandardCharsets.UTF_8
+        );
+
+        org.assertj.core.api.Assertions.assertThat(om.readTree(payload).get("email").asString()).isEqualTo(
+            "user-jwt-email-claim@example.com"
+        );
+
+        // Issuer and audience: not yet validated anywhere (see the note in AuthenticateController), but they have to
+        // be present and correct before validation can be switched on, and this is where a typo would otherwise sit
+        // unnoticed until it locked every user out on the day someone enabled the validators.
+        org.assertj.core.api.Assertions.assertThat(om.readTree(payload).get("iss").asString()).isEqualTo(AuthenticateController.ISSUER);
+
+        // A single-valued `aud` serializes as a bare string rather than a one-element array — RFC 7519 allows both,
+        // and Nimbus takes the shorter form. Accept either, so this does not break if a second audience is ever added.
+        tools.jackson.databind.JsonNode audience = om.readTree(payload).get("aud");
+        org.assertj.core.api.Assertions.assertThat(audience.isArray() ? audience.get(0).asString() : audience.asString()).isEqualTo(
+            AuthenticateController.AUDIENCE
+        );
+    }
+
     @Test
     void testAuthorizeWithRememberMe() throws Exception {
         User user = new User();

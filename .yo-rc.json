@@ -16,7 +16,7 @@
     "feignClient": false,
     "gradleEnterpriseHost": null,
     "jhipsterVersion": "8.3.0",
-    "jwtSecretKey": "ZmU1MWRiODU3MjFkNjUzNzU0Yjk4YTc5NTExN2EyZGM0ODI3ZGI1ZWI0ZjlmZmI2YzFiMTBjNTc5NGI1NTg1Njg1ODNlZjc1ZDgwMjVlNDg2MzM5ZWY0MjA1NzgxNDYwMDUzOTE4MDdmYTgwYjZiMjVjNzlmZjEyZGQxZjRmMjU=",
+    "jwtSecretKey": "",
     "messageBroker": "kafka",
     "nativeLanguage": "en",
     "packageName": "net.jojoaddison",

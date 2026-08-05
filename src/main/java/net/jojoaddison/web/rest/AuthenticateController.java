@@ -1,6 +1,7 @@
 package net.jojoaddison.web.rest;
 
 import static net.jojoaddison.security.SecurityUtils.AUTHORITIES_KEY;
+import static net.jojoaddison.security.SecurityUtils.EMAIL_KEY;
 import static net.jojoaddison.security.SecurityUtils.JWT_ALGORITHM;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -9,6 +10,8 @@ import java.security.Principal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.stream.Collectors;
+import net.jojoaddison.domain.User;
+import net.jojoaddison.repository.UserRepository;
 import net.jojoaddison.web.rest.vm.LoginVM;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,6 +38,19 @@ import reactor.core.publisher.Mono;
 @RequestMapping("/api")
 public class AuthenticateController {
 
+    /**
+     * Identifies this gateway as the minter of a token. Must match the issuer the patient microservice validates
+     * once validation is switched on, and must differ from what hc-admin and hc-professional use — telling the three
+     * apart is the entire point.
+     */
+    public static final String ISSUER = "hc-patient-gateway";
+
+    /**
+     * The subsystem a token is good for. hc-admin and hc-professional get their own; a token is then accepted only by
+     * the product it was minted for, even though all three verify with the same key.
+     */
+    public static final String AUDIENCE = "hc-patient";
+
     private final Logger log = LoggerFactory.getLogger(AuthenticateController.class);
 
     private final JwtEncoder jwtEncoder;
@@ -47,20 +63,36 @@ public class AuthenticateController {
 
     private final ReactiveAuthenticationManager authenticationManager;
 
-    public AuthenticateController(JwtEncoder jwtEncoder, ReactiveAuthenticationManager authenticationManager) {
+    private final UserRepository userRepository;
+
+    public AuthenticateController(
+        JwtEncoder jwtEncoder,
+        ReactiveAuthenticationManager authenticationManager,
+        UserRepository userRepository
+    ) {
         this.jwtEncoder = jwtEncoder;
         this.authenticationManager = authenticationManager;
+        this.userRepository = userRepository;
     }
 
     @PostMapping("/authenticate")
     public Mono<ResponseEntity<JWTToken>> authorize(@Valid @RequestBody Mono<LoginVM> loginVM) {
         return loginVM
-            .flatMap(
-                login ->
-                    authenticationManager
-                        .authenticate(new UsernamePasswordAuthenticationToken(login.getUsername(), login.getPassword()))
-                        .flatMap(auth -> Mono.fromCallable(() -> this.createToken(auth, login.isRememberMe())))
-            )
+            .flatMap(login ->
+                authenticationManager
+                    .authenticate(new UsernamePasswordAuthenticationToken(login.getUsername(), login.getPassword()))
+                    // The email is looked up here rather than carried on the principal because
+                    // DomainUserDetailsService builds a stock Spring Security User, which has no
+                    // room for it. One extra read per login is not a cost worth designing around.
+                    .flatMap(auth ->
+                        userRepository
+                            .findOneByLogin(auth.getName())
+                            .mapNotNull(User::getEmail)
+                            // An account with no email still gets a token, just an unscoped one.
+                            // The microservice treats a missing email claim as "no patient
+                            // records at all", which fails closed.
+                            .defaultIfEmpty("")
+                            .map(email -> this.createToken(auth, email, login.isRememberMe()))))
             .map(jwt -> {
                 HttpHeaders httpHeaders = new HttpHeaders();
                 httpHeaders.setBearerAuth(jwt);
@@ -80,7 +112,21 @@ public class AuthenticateController {
         return request.getPrincipal().map(Principal::getName);
     }
 
-    public String createToken(Authentication authentication, boolean rememberMe) {
+    /**
+     * Mints the session token.
+     *
+     * <p>The {@code email} claim is what lets the microservice work out <em>which patient</em> is calling. It has no
+     * user management of its own ({@code skipUserManagement}), so before this claim existed the only identity it
+     * received was the login — which matches nothing in its data — and the practical consequence was that it
+     * authorized every request on "is authenticated" alone. It resolves the claim to a Profile, and from there to the
+     * {@code patientId} that scopes every query. An absent or unknown email therefore means no records, not all of
+     * them.</p>
+     *
+     * @param authentication the authenticated principal.
+     * @param email the account's email address, or empty if it has none.
+     * @param rememberMe whether to issue a long-lived token.
+     */
+    public String createToken(Authentication authentication, String email, boolean rememberMe) {
         String authorities = authentication.getAuthorities().stream().map(GrantedAuthority::getAuthority).collect(Collectors.joining(" "));
 
         Instant now = Instant.now();
@@ -96,7 +142,21 @@ public class AuthenticateController {
             .issuedAt(now)
             .expiresAt(validity)
             .subject(authentication.getName())
+            // Issuer and audience exist because the HMAC signing key is SHARED with hc-admin and hc-professional
+            // (see deploy/prod-server/.env.example). A shared key with no issuer and no audience means a token minted
+            // by any one of the three validates perfectly at the other two, carrying whatever authorities it was
+            // given — ROLE_ADMIN in one product is ROLE_ADMIN in all three, and they do not mean the same thing.
+            //
+            // NOTE: nothing VALIDATES these yet, so they do not close the hole on their own. That is deliberate
+            // sequencing, not an oversight. Every token in flight today lacks these claims, and all three products
+            // share the key — turn on validation before the claims are universally present and every user of every
+            // product is logged out at once. The order is: ship the claims here, wait for tokens to turn over
+            // (an hour, since F9 shortened the lifetime), get the sibling products emitting theirs, then enable the
+            // issuer and audience validators on both decoders. Tracked as the second half of finding 3.
+            .issuer(ISSUER)
+            .audience(java.util.List.of(AUDIENCE))
             .claim(AUTHORITIES_KEY, authorities)
+            .claim(EMAIL_KEY, email == null ? "" : email)
             .build();
 
         JwsHeader jwsHeader = JwsHeader.with(JWT_ALGORITHM).build();

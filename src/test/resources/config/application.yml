@@ -103,7 +103,15 @@ jhipster:
     authentication:
       jwt:
         # This token must be encoded using Base64 (you can type `echo 'secret-key'|base64` on your command line)
-        base64-secret: ZmU1MWRiODU3MjFkNjUzNzU0Yjk4YTc5NTExN2EyZGM0ODI3ZGI1ZWI0ZjlmZmI2YzFiMTBjNTc5NGI1NTg1Njg1ODNlZjc1ZDgwMjVlNDg2MzM5ZWY0MjA1NzgxNDYwMDUzOTE4MDdmYTgwYjZiMjVjNzlmZjEyZGQxZjRmMjU=
+        # DEVELOPMENT AND TEST ONLY. This value is committed, therefore public, therefore not a secret — it is
+        # here so `./mvnw` works with no setup. It is deliberately the SAME string in hc-patient-service and
+        # hc-patient-gateway: the gateway mints tokens and the service validates them, and until 2026-08-05 the two
+        # repos shipped DIFFERENT committed keys, so a relayed token failed validation downstream in every
+        # environment that did not override both.
+        #
+        # Production reads JWT_BASE64_SECRET from the environment (see application-prod.yml) and the application
+        # refuses to start without it. Never copy this value anywhere that matters.
+        base64-secret: G5oVDNDxRIh5PtBW0J+79wSUU4KuLJsDcXyo36DsTGIjSwVWjQBAXOXrCPDjf8RKqfghIRoBi2/H1IbqyAfasg==
         # Token is valid 24 hours
         token-validity-in-seconds: 86400
         token-validity-in-seconds-for-remember-me: 86400
