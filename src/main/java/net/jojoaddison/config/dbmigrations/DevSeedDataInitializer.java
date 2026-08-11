@@ -13,14 +13,16 @@ import org.springframework.stereotype.Component;
 import tech.jhipster.config.JHipsterConstants;
 
 /**
- * Seeds the {@code admin}, {@code user}, {@code patient} and {@code angel} convenience accounts.
+ * Seeds the {@code admin}, {@code user}, {@code patient}, {@code angel} and {@code doctor} convenience accounts.
  *
  * <p><strong>Runs under {@code dev} and {@code test} only.</strong> Their passwords come from
  * {@link SeedData#defaultPasswordFor(String)}, which derives a publicly known value from the login, so an environment
  * that anyone else can reach must never have them. This used to be a Mongock change unit that ran in every profile,
  * which is how a production deployment came to accept {@code admin} / {@code Admin@01234}; the profile gate is the
  * whole point of this class, so do not remove it to "make production easier to log into" — that is what
- * {@link AdminBootstrapInitializer} is for.</p>
+ * {@link AdminBootstrapInitializer} is for. {@code doctor} makes that gate matter more than it used to: it is the only
+ * account anywhere that holds {@code ROLE_PROFESSIONAL}, which the patient service treats as unrestricted,
+ * cross-patient access. Nothing grants it in production, where it is an administrator's to assign.</p>
  *
  * <p>An {@link ApplicationRunner} rather than a change unit because it must be re-runnable: Mongock records a change
  * unit as executed and never runs it again, so a developer who drops a user could not get it back without editing the
@@ -49,6 +51,7 @@ public class DevSeedDataInitializer implements ApplicationRunner {
         Authority adminAuthority = SeedData.saveAuthorityIfMissing(template, AuthoritiesConstants.ADMIN);
         Authority patientAuthority = SeedData.saveAuthorityIfMissing(template, AuthoritiesConstants.PATIENT);
         Authority angelAuthority = SeedData.saveAuthorityIfMissing(template, AuthoritiesConstants.ANGEL);
+        Authority professionalAuthority = SeedData.saveAuthorityIfMissing(template, AuthoritiesConstants.PROFESSIONAL);
 
         SeedData.saveUserIfMissing(
             template,
@@ -62,6 +65,13 @@ public class DevSeedDataInitializer implements ApplicationRunner {
         SeedData.saveUserIfMissing(
             template,
             SeedData.buildUser("user-4", "angel", "Angel", "Angel", passwordEncoder, angelAuthority, userAuthority)
+        );
+        // doctor is the login behind professional-doctor in the patient service's demo dataset, which its own
+        // DemoDataInitializer seeds under the same two profiles. That record identifies its professional by
+        // accountLogin and joins to this account on doctor@localhost, so the two seeds have to agree on the login.
+        SeedData.saveUserIfMissing(
+            template,
+            SeedData.buildUser("user-5", "doctor", "Ama", "Mensah", passwordEncoder, professionalAuthority, userAuthority)
         );
         LOG.debug("Development seed accounts are present");
     }
