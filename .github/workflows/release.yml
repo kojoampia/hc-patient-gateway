@@ -1,0 +1,146 @@
+# Builds this repo's production image and pushes it to GHCR.
+#
+# This is the `github` deploy channel. `hc-patient-ci/deploy.sh --channel github` deploys exactly
+# these images, by hand, with the same compose.yml and the same ./start — so a CI-built image and a
+# hand-built one are deployed by the same operation, and only their provenance differs. The default
+# channel is still `local`: build here, push to docker.jojoaddison.net.
+#
+# --- Tags ----------------------------------------------------------------------------------------
+#
+# ${{ github.sha }} — the FULL 40-character SHA — plus `latest` as a convenience for humans.
+#
+# hc-patient is three separate repositories (hc-patient-gateway, hc-patient-service,
+# hc-patient-dashboard) with three independent HEADs, so there is no shared commit that could name
+# the set. Each repo therefore tags only its own image with its own SHA, and the deployment carries
+# three tag values: GATEWAY_TAG, API_TAG and WEB_TAG.
+#
+# Note the width difference between the channels, because it is a trap: the local channel tags with
+# the SHORT sha (`git rev-parse --short HEAD`) and this one tags with the full 40 characters. A tag
+# copied from one channel will not resolve on the other.
+#
+# Do not "simplify" this to a single shared tag. The images would collide: a change confined to one
+# repo would republish different content under a tag that already exists on the other two. That
+# exact bug was fixed in the deployment repo on 2026-08-03 — see its TODO.md.
+#
+# --- The Dockerfile is not in this repo ------------------------------------------------------------
+#
+# It lives in the deployment repo (docker/gateway.Dockerfile) so that these three application repos
+# need no deployment-specific files of their own. That is why this workflow checks out two
+# repositories.
+#
+# PREREQUISITE: an `HC_PATIENT_CI_TOKEN` secret on this repo, holding a token that can read
+# kojoampia/hc-patient-ci. That repo is PRIVATE, and a workflow's default GITHUB_TOKEN is scoped to
+# the repo it runs in — it can read a public sibling and nothing else. A fine-grained PAT limited to
+# hc-patient-ci with Contents: Read-only is enough. Set `vars.DEPLOY_REPO` if the repo is renamed.
+#
+# --- No quality gate here ---------------------------------------------------------------------------
+#
+# This workflow builds and pushes; it does not run `./mvnw verify`. build.yml in this repo is the
+# quality gate. The Dockerfile skips tests deliberately (the integration tests need Testcontainers,
+# which needs a Docker daemon a build container does not have), so nothing here proves the commit is
+# good. Do not fold the tests into this file, or a failing test would leave the registry without an
+# image for a commit that is already on main.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  # Re-running a release for an already-merged commit should not require an empty push.
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false # never interrupt a push mid-flight
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: hc-patient-gateway
+
+jobs:
+  build-image:
+    name: Build and push the gateway image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      # Required by upload-sarif.
+      security-events: write
+    steps:
+      # Into a subdirectory rather than the workspace root, so the deployment checkout below cannot
+      # end up inside this repo's build context.
+      - name: Check out the gateway
+        uses: actions/checkout@v4
+        with:
+          path: app
+
+      - name: Check out the deployment repo (for docker/gateway.Dockerfile)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.DEPLOY_REPO || format('{0}/hc-patient-ci', github.repository_owner) }}
+          # HC_PATIENT_CI_TOKEN is required — see the header. The fallback to github.token is not a
+          # working configuration for a private deployment repo; it exists so a missing secret fails
+          # HERE, on a checkout that plainly names the repo it could not read, rather than further
+          # down on a Dockerfile that mysteriously does not exist.
+          token: ${{ secrets.HC_PATIENT_CI_TOKEN || github.token }}
+          path: deploycfg
+
+      # GHCR rejects an upper-case path component, and github.repository_owner preserves whatever
+      # case the account was registered with — so it is folded here rather than assumed.
+      - name: Resolve the image path
+        run: |
+          owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          echo "IMAGE_PATH=${REGISTRY}/${owner}/${IMAGE_NAME}" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: app
+          file: deploycfg/docker/gateway.Dockerfile
+          push: true
+          # The SHA is what deploy.sh pins; `latest` is a convenience for humans and is never what
+          # production resolves to.
+          tags: |
+            ${{ env.IMAGE_PATH }}:${{ github.sha }}
+            ${{ env.IMAGE_PATH }}:latest
+          cache-from: type=gha,scope=gateway
+          cache-to: type=gha,scope=gateway,mode=max
+
+      # Scans the image that was just pushed, not a rebuild of it — the digest above is what runs in
+      # production, and a scan of anything else is a scan of something else.
+      #
+      # Reports, does not block: this pipeline deliberately keeps the registry populated even when a
+      # check fails, and a base-image CVE with no upstream fix would otherwise stop deployment of an
+      # unrelated application change. Results land in the Security tab and the exit code stays 0.
+      #
+      # v0.35.0, NOT v0.36.0. trivy-action delegates to aquasecurity/setup-trivy, and which ref it
+      # names decides whether this job can even start: v0.28.0-v0.30.0 name setup-trivy tags upstream
+      # has since deleted, and v0.36.0 names a moving `@3` tag that does not exist. v0.31.0-v0.35.0
+      # pin it by commit SHA, which cannot be pruned. An unresolvable action fails at "Set up job",
+      # before any step runs, so `continue-on-error` cannot rescue it and a broken scan step takes
+      # the image build down with it. hc-admin hit exactly that on 2026-08-05 and its workflows
+      # document the fix while still naming v0.36.0 — do not copy that pin back from them.
+      - name: Scan the pushed image
+        uses: aquasecurity/trivy-action@v0.35.0
+        with:
+          image-ref: ${{ env.IMAGE_PATH }}:${{ github.sha }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '0'
+
+      - name: Upload the scan to the Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-image
