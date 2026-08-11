@@ -10,6 +10,30 @@ Status legend: `[x]` done · `[~]` partial / diverges from plan · `[ ]` not sta
 
 ## What changed since the last baseline
 
+### `ROLE_PROFESSIONAL` can now be issued, and `doctor` holds it (2026-08-11)
+
+The patient service has gated cross-patient reads and its staff-only writes on `ROLE_PROFESSIONAL`
+since the 2026-08-05 audit (`PatientScope.isUnrestricted`), but nothing could issue it — the
+authority named an access level no token could carry, so a clinician signing in was scoped to their
+own records like any patient. The professional-dashboard demo dataset made that concrete: its one
+clinician is keyed by `accountLogin: "doctor"`, and a `doctor` with only `ROLE_USER` resolves to no
+`Profile` and therefore sees nothing at all.
+
+- **`AuthoritiesConstants.PROFESSIONAL`** added, and **`ProfessionalRoleMigration`** (change unit
+  `003`) seeds the authority in every profile. A separate change unit from `002` for the same reason
+  `002` is separate from `001`: Mongock never re-runs one, so a database where `002` has already run
+  would otherwise never receive the role.
+- **`DevSeedDataInitializer` seeds `doctor`** (`user-5`, `ROLE_PROFESSIONAL` + `ROLE_USER`) under
+  `dev` and `test` only, with the same derived password scheme as the other four. It is the only
+  account anywhere that holds the role; nothing grants it in production, where it is an
+  administrator's to assign. Registration hardcodes `ROLE_USER` (`UserService.registerUser`), so it
+  cannot be self-granted.
+- **The join to the patient service is email.** That service runs with `skipUserManagement` and has
+  no `User` document, so `doctor@localhost` is the only identifier the two share; its
+  `DemoDataInitializer` writes the matching `Professional` with that email. Changing either login or
+  email breaks the join silently — see `hc-patient-service/patient-api.md`.
+- **Verified:** `./mvnw verify` — 134 unit tests, 48 integration tests.
+
 ### The server port moved to 5505 (branch `chore/gateway-port-5505`, 2026-08-03)
 
 The gateway listened on **5503** while the dashboard's dev proxy had always targeted **5505**
@@ -122,6 +146,7 @@ before the next JDK bump.
 - `[x]` **Deleted `deploy.sh` and `build-deploy.sh` (2026-08-11).** Both were copies from the admin gateway: `deploy.sh` tagged and pushed `admingateway` to `docker-registry.jojoaddison.net/hc/`, and `build-deploy.sh` additionally ran `git pull -r`, created a `v$version` tag in THIS repo, and `cd`'d into a `br-admin-gateway` directory. Deleted rather than fixed, because `hc-patient/deploy` already owns deployment and a second script here could only ever drift from it.
 
   Prompted by `deploy.sh` finally being run by mistake, from this directory instead of `hc-patient/deploy`. It failed to find an `admingateway` image, pushed nothing, printed **`build and deploy completed.`** and exited 0 — a false success that read as a completed production deploy. That is the argument against leaving a wrong script in place with a warning in the docs: the warning is only read by someone who already suspects a problem.
+
 - `[ ]` Delete the leftover `angular.json` — `skipClient: true`, there is no `src/main/webapp`, and it builds nothing.
 - `[ ]` Delete the leftover `webpack/` directory (`environment.js`, `proxy.conf.js`, `webpack.custom.js`, `logo-jhipster.png`) for the same reason — it is tracked, and nothing in a `skipClient` app reads it. Worth noting before deleting: its `proxy.conf.js` already targeted **5505**, which is corroboration that 5505 was the gateway's intended port all along and 5503 was the drift.
 - `[ ]` Wire CI. No workflows exist in `.github/`; `ci:backend:test` and `ci:server:await:patientgateway` are unused entry points. The dashboard repo publishes to GHCR — mirror or justify a different target.
