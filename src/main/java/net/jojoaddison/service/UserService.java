@@ -322,7 +322,7 @@ public class UserService {
      * @return availability and, when taken, up to {@value #MAX_SUGGESTIONS} free alternatives.
      */
     public Mono<UsernameAvailabilityDTO> checkUsernameAvailability(String login) {
-        String normalized = login.toLowerCase(Locale.ROOT);
+String normalized = login.toLowerCase();
         return isFree(normalized).flatMap(free -> {
             if (Boolean.TRUE.equals(free)) {
                 return Mono.just(new UsernameAvailabilityDTO(true, List.of()));
