@@ -364,17 +364,19 @@ String normalized = login.toLowerCase();
      * the base is truncated to fit within 50 characters, and truncation can land mid-way through an
      * email-shaped login and leave something the registration validator would reject.
      */
-    static List<String> suggestionsFor(String login) {
-        List<String> candidates = new ArrayList<>();
-        for (String suffix : SUGGESTION_SUFFIXES) {
-            int room = MAX_LOGIN_LENGTH - suffix.length();
-            String base = login.length() > room ? login.substring(0, room) : login;
-            String candidate = base + suffix;
-            if (!candidate.equals(login) && candidate.matches(Constants.LOGIN_REGEX) && !candidates.contains(candidate)) {
-                candidates.add(candidate);
-            }
+static List<String> suggestionsFor(String login) {
+    java.util.regex.Pattern loginPattern = java.util.regex.Pattern.compile(Constants.LOGIN_REGEX);
+    List<String> candidates = new ArrayList<>();
+    for (String suffix : SUGGESTION_SUFFIXES) {
+        int room = MAX_LOGIN_LENGTH - suffix.length();
+        String base = login.length() > room ? login.substring(0, room) : login;
+        String candidate = base + suffix;
+        if (!candidate.equals(login) && loginPattern.matcher(candidate).matches() && !candidates.contains(candidate)) {
+            candidates.add(candidate);
         }
-        return candidates;
+    }
+    return candidates;
+}
     }
 
     public Mono<User> getUserWithAuthorities() {
