@@ -78,6 +78,10 @@ public class SecurityConfiguration {
                     .pathMatchers("/*.js", "/*.css", "/*.html", "/*.ico").permitAll()
                     .pathMatchers("/api/authenticate").permitAll()
                     .pathMatchers("/api/register").permitAll()
+                    // The registration form's username look-ahead. Public for the same reason
+                    // /api/register is: nobody has a token yet. Rate-limited by the
+                    // hc_patient_lookahead nginx zone rather than here.
+                    .pathMatchers("/api/account/username-available").permitAll()
                     .pathMatchers("/api/activate").permitAll()
                     .pathMatchers("/api/account/reset-password/init").permitAll()
                     .pathMatchers("/api/account/reset-password/finish").permitAll()

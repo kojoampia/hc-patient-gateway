@@ -12,6 +12,7 @@ import net.jojoaddison.security.AuthoritiesConstants;
 import net.jojoaddison.security.SecurityUtils;
 import net.jojoaddison.service.dto.AdminUserDTO;
 import net.jojoaddison.service.dto.UserDTO;
+import net.jojoaddison.service.dto.UsernameAvailabilityDTO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Pageable;
@@ -30,6 +31,37 @@ import tech.jhipster.security.RandomUtil;
 public class UserService {
 
     private final Logger log = LoggerFactory.getLogger(UserService.class);
+
+    /** How many free alternatives the look-ahead offers when a login is taken. */
+    static final int MAX_SUGGESTIONS = 3;
+
+    /** Matches the {@code @Size} on ManagedUserVM.login; a longer suggestion could not be registered. */
+    private static final int MAX_LOGIN_LENGTH = 50;
+
+    /**
+     * Tried in order. Plain digits first because they read as the obvious next choice, then a
+     * separator form for anyone whose name already ends in a number, where "kojo1" -> "kojo11" is
+     * more confusing than helpful. Enough entries that three are still found when the popular
+     * variants are also taken, and short enough that the sequential lookup stays cheap.
+     */
+    private static final List<String> SUGGESTION_SUFFIXES = List.of(
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "7",
+        "9",
+        "10",
+        "21",
+        "42",
+        "77",
+        "99",
+        ".1",
+        ".2",
+        "-1",
+        "-2"
+    );
 
     private final UserRepository userRepository;
 
@@ -277,6 +309,74 @@ public class UserService {
 
     public Mono<User> getUserWithAuthoritiesByLogin(String login) {
         return userRepository.findOneByLogin(login);
+    }
+
+    /**
+     * Answers whether {@code login} can be registered, and when it cannot, offers alternatives that can.
+     *
+     * <p>The login is lower-cased first because {@link #registerUser} stores it lower-cased. Without
+     * that, "Kojo" would be reported free while registering it fails with LoginAlreadyUsed — the
+     * look-ahead has to answer the same question registration will.
+     *
+     * @param login the candidate, already validated against {@link Constants#LOGIN_REGEX} by the resource.
+     * @return availability and, when taken, up to {@value #MAX_SUGGESTIONS} free alternatives.
+     */
+    public Mono<UsernameAvailabilityDTO> checkUsernameAvailability(String login) {
+String normalized = login.toLowerCase();
+        return isFree(normalized).flatMap(free -> {
+            if (Boolean.TRUE.equals(free)) {
+                return Mono.just(new UsernameAvailabilityDTO(true, List.of()));
+            }
+            // Concurrency 1, not the default 256. filterWhen would otherwise fire a query for every
+            // candidate at once, so a single keystroke on a taken name costs ~16 round trips instead
+            // of the 3-4 it takes to find three free ones. take() then cancels the rest.
+            return Flux.fromIterable(suggestionsFor(normalized))
+                .filterWhen(this::isFree, 1)
+                .take(MAX_SUGGESTIONS)
+                .collectList()
+                .map(available -> new UsernameAvailabilityDTO(false, available));
+        });
+    }
+
+    /**
+     * Whether {@code login} (already lower-cased) would be accepted by {@link #registerUser}.
+     *
+     * <p>NOT simply "no row exists". registerUser deletes an existing user that has never been
+     * activated and carries on, so a login held only by an abandoned registration is still
+     * registrable. Reporting it taken would send someone away from a name they could have had, and
+     * worse, the three-day cleanup job would free it later with no explanation — so this mirrors the
+     * rule rather than the row.
+     */
+    private Mono<Boolean> isFree(String login) {
+        return userRepository.findOneByLogin(login).map(user -> !user.isActivated()).defaultIfEmpty(true);
+    }
+
+    /**
+     * Candidate alternatives for a taken login, in the order they should be offered.
+     *
+     * <p>Deterministic on purpose. A random suffix would make the endpoint untestable and would hand a
+     * different answer to two people typing the same name at the same moment — both would be told
+     * their pick is free, and the second to submit would still be rejected. Determinism does not fix
+     * that race (nothing here reserves a name), but it keeps the collision visible rather than
+     * scattered.
+     *
+     * <p>Every candidate is re-checked against {@link Constants#LOGIN_REGEX} before being offered:
+     * the base is truncated to fit within 50 characters, and truncation can land mid-way through an
+     * email-shaped login and leave something the registration validator would reject.
+     */
+static List<String> suggestionsFor(String login) {
+    java.util.regex.Pattern loginPattern = java.util.regex.Pattern.compile(Constants.LOGIN_REGEX);
+    List<String> candidates = new ArrayList<>();
+    for (String suffix : SUGGESTION_SUFFIXES) {
+        int room = MAX_LOGIN_LENGTH - suffix.length();
+        String base = login.length() > room ? login.substring(0, room) : login;
+        String candidate = base + suffix;
+        if (!candidate.equals(login) && loginPattern.matcher(candidate).matches() && !candidates.contains(candidate)) {
+            candidates.add(candidate);
+        }
+    }
+    return candidates;
+}
     }
 
     public Mono<User> getUserWithAuthorities() {

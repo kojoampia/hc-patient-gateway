@@ -9,9 +9,11 @@ import net.jojoaddison.service.TokenRevocationService;
 import net.jojoaddison.service.UserService;
 import net.jojoaddison.service.dto.AdminUserDTO;
 import net.jojoaddison.service.dto.PasswordChangeDTO;
+import net.jojoaddison.service.dto.UsernameAvailabilityDTO;
 import net.jojoaddison.web.rest.errors.*;
 import net.jojoaddison.web.rest.vm.KeyAndPasswordVM;
 import net.jojoaddison.web.rest.vm.ManagedUserVM;
+import net.jojoaddison.web.rest.vm.UsernameCheckVM;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -72,6 +74,29 @@ public class AccountResource {
             throw new InvalidPasswordException();
         }
         return userService.registerUser(managedUserVM, managedUserVM.getPassword()).doOnSuccess(mailService::sendActivationEmail).then();
+    }
+
+    /**
+     * {@code POST  /account/username-available} : look-ahead for the registration form's username field.
+     *
+     * <p>Unauthenticated, because registration is. That makes it a user-enumeration oracle by
+     * construction, and the trade was made knowingly: {@code POST /register} already answers the same
+     * question by returning {@code LOGIN_ALREADY_USED} for a taken login, so this exposes nothing new —
+     * it only makes the existing answer cheaper to ask for. What bounds the harvesting rate is the
+     * {@code hc_patient_lookahead} nginx zone in hc-patient-ci, which exists for this path alone —
+     * the account zone next to it is 10 r/min with burst 3, sized for paths that send an email, and
+     * would 429 a user part-way through typing a name. If that zone ever stops covering this path,
+     * this becomes the one unmetered account endpoint on the gateway.
+     *
+     * <p>Returns 200 whether or not the login is free. An availability check is not an error, and a
+     * 4xx for "taken" would land in the error-rate metrics that the SLO burn-rate alerts read.
+     *
+     * @param usernameCheckVM the candidate login.
+     * @return availability, plus up to three free alternatives when it is taken.
+     */
+    @PostMapping("/account/username-available")
+    public Mono<UsernameAvailabilityDTO> isUsernameAvailable(@Valid @RequestBody UsernameCheckVM usernameCheckVM) {
+        return userService.checkUsernameAvailability(usernameCheckVM.getLogin());
     }
 
     /**
