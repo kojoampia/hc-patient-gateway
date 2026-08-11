@@ -93,7 +93,14 @@ public class MailService {
             message.setSubject(subject);
             message.setText(content, isHtml);
             javaMailSender.send(mimeMessage);
-            log.debug("Sent email to User '{}'", to);
+            // INFO, not DEBUG. Production runs at INFO, so a successful send used to log NOTHING,
+            // and the only asymmetry in the pair below was that failure was visible and success was
+            // not. That is precisely how outbound mail could be broken from 2026-08-07 to 08-08
+            // without anyone noticing: the `mail` health indicator went DOWN silently, and there was
+            // no positive signal anywhere to be missing. The first message this stack is known to
+            // have delivered was confirmed on 2026-08-11 by reading the recipient's inbox, because
+            // the logs could not answer it. They can now.
+            log.info("Sent email to User '{}'", to);
         } catch (MailException | MessagingException e) {
             log.warn("Email could not be sent to user '{}'", to, e);
         }
