@@ -165,6 +165,63 @@ class MailServiceIT {
         assertThat(message.getDataHandler().getContentType()).isEqualTo("text/html;charset=UTF-8");
     }
 
+    /**
+     * The wording that actually reaches users, asserted against src/main/resources — NOT by rendering
+     * a message.
+     *
+     * <p>Rendering cannot check this. src/test/resources/i18n/ deliberately shadows the real bundles
+     * on the test classpath (its own comment says "this file is loaded instead of real file", and
+     * testSendLocalizedEmailForAllSupportedLanguages depends on that), so every mail rendered in this
+     * class uses test wording. Production could say anything at all and no rendering test would
+     * notice — which is how these bundles kept hc-admin's branding until a delivered message was read
+     * by hand on 2026-08-11.
+     */
+    private Properties productionBundle(String suffix) throws Exception {
+        Path file = Path.of("src/main/resources/i18n/messages" + suffix + ".properties");
+        assertThat(file).as("production bundle %s", file).exists();
+        Properties properties = new Properties();
+        // Explicit UTF-8, matching spring.messages.encoding. Reading it any other way would mask the
+        // very defect the German assertion below exists to catch.
+        properties.load(new InputStreamReader(Files.newInputStream(file), StandardCharsets.UTF_8));
+        return properties;
+    }
+
+    @Test
+    void everyProductionBundleCarriesThisProductsBrand() throws Exception {
+        for (String suffix : new String[] { "", "_en", "_fr", "_de" }) {
+            Properties bundle = productionBundle(suffix);
+            assertThat(bundle.stringPropertyNames()).contains("email.activation.title", "email.activation.text1", "email.signature");
+            for (String key : bundle.stringPropertyNames()) {
+                String value = bundle.getProperty(key);
+                assertThat(value)
+                    .as("messages%s.properties -> %s", suffix, key)
+                    // "Admin" told every patient their Admin account had been created; "patientGateway"
+                    // and "JHipster" are the generator's placeholders. None belongs in a user's inbox.
+                    .doesNotContain("Admin")
+                    .doesNotContain("patientGateway")
+                    .doesNotContain("JHipster");
+            }
+            assertThat(bundle.getProperty("email.activation.title")).contains("Abofonsa BridgeCare");
+            assertThat(bundle.getProperty("email.activation.text1")).contains("Abofonsa BridgeCare");
+        }
+    }
+
+    @Test
+    void theGermanBundleIsUtf8AndKeepsItsUmlauts() throws Exception {
+        // messages_de.properties was ISO-8859-1 while spring.messages.encoding defaults to UTF-8, so
+        // German mail went out reading "Liebe Gr??e" and "zur?cksetzen". Nothing failed: the file
+        // parsed, the send succeeded, and the damage was visible only to a German-speaking recipient.
+        // U+FFFD is what a mis-decoded byte becomes, so asserting on its ABSENCE is what survives
+        // someone re-saving the file in the wrong encoding.
+        Properties german = productionBundle("_de");
+
+        for (String key : german.stringPropertyNames()) {
+            assertThat(german.getProperty(key)).as("messages_de.properties -> %s", key).doesNotContain("\uFFFD");
+        }
+        assertThat(german.getProperty("email.activation.text2")).isEqualTo("Liebe Gr\u00fc\u00dfe,");
+        assertThat(german.getProperty("email.reset.title")).contains("zur\u00fccksetzen");
+    }
+
     @Test
     void testCreationEmail() throws Exception {
         User user = new User();
