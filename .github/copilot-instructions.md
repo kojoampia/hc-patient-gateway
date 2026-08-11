@@ -64,6 +64,6 @@
 - See `patient-gateway.md` for the plan of record: open decisions, platform hygiene, auth/onboarding work, and the tracked test-coverage gaps.
 - See `AGENTS.md` for standing quality/security/performance expectations.
 - See `README.md` for the endpoint inventory, security rules, seed data, and Docker compose usage.
-- Ignore `angular.json` (leftover, no client here) and treat `deploy.sh`/`build-deploy.sh` as stale copies from the admin gateway.
+- Ignore `angular.json` (leftover, no client here). This repo has no deploy script: deployment lives in `hc-patient/deploy` (`kojoampia/hc-patient-ci`).
 - See `pom.xml` for profiles, Java/Maven constraints, and test plugin setup.
 - See `package.json` for standard local commands used by this repository.

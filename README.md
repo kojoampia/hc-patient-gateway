@@ -281,7 +281,7 @@ The repository also contains Docker definitions for:
 
 ## Repository caveats
 
-- `deploy.sh` and `build-deploy.sh` were copied from the admin gateway and still tag/push `admingateway` / expect a `br-admin-gateway` directory. They are **wrong for this repo** — fix or ignore them; do not run them expecting a patient-gateway image.
+- This repo has **no deploy script**. `deploy.sh` and `build-deploy.sh` — copies from the admin gateway that tagged and pushed `admingateway` and expected a `br-admin-gateway` directory — were deleted on 2026-08-11 after one of them was run by mistake and reported `build and deploy completed` while shipping nothing. Deployment lives in `hc-patient/deploy` (`kojoampia/hc-patient-ci`); run `./deploy.sh` from **there**.
 - `angular.json` is a leftover from before `skipClient` and builds nothing.
 - `patient-gw.log` is output from the workspace-level `start-patient.sh` helper.
 - No CI workflows exist in `.github/`; the `ci:*` npm scripts are unused entry points.
