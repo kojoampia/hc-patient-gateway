@@ -94,6 +94,6 @@ Security rules, the anonymous/admin path lists, seed data, and the endpoint inve
 - Java stays within the Enforcer range `[17,26)`; the build targets 25, pinned with `maven.compiler.release` so the API surface matches the bytecode level whichever JDK builds it.
 - Don't bypass the JHipster alert-header/exception-translation conventions in `web/rest/errors`.
 - Respect the ArchUnit layer boundaries.
-- `angular.json` is an inert leftover (no client here), and `deploy.sh`/`build-deploy.sh` are stale copies from the admin gateway that tag/push `admingateway` — don't run them expecting a patient-gateway image.
+- `angular.json` is an inert leftover (no client here). The stale `deploy.sh`/`build-deploy.sh` copied from the admin gateway were deleted on 2026-08-11 — deployment lives in `hc-patient/deploy` (`kojoampia/hc-patient-ci`) and nothing in this repo deploys itself.
 - No CI workflows exist in `.github/`; the `ci:*` npm scripts are unused entry points.
 - `patient-gw.log` is output from the workspace-level `start-patient.sh` helper.

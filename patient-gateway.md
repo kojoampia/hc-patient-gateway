@@ -30,11 +30,11 @@ dev only, so there is no dev/prod split left to trip over:
 `.yo-rc.json` was changed deliberately: it is the value the generator writes into both profiles, so
 leaving it at 5503 would have let a regeneration silently undo this.
 
-**This needs a `./deploy.sh` to take effect on `patient.abofonsa.com`.** Until the stack is
+**This needs a deploy from `hc-patient/deploy` to take effect on `patient.abofonsa.com`.** Until the stack is
 redeployed, the running web container's nginx still proxies to 5503 and the gateway image still
 listens there — they are consistent with each other, so the site keeps working; it is only the
 combination of a new image with an old nginx config (or vice versa) that would break. Deploy both
-together, which `deploy.sh` does.
+together, which `hc-patient/deploy/deploy.sh` does.
 
 ### The Java target moved 26 → 25 (2026-08-04)
 
@@ -119,7 +119,9 @@ before the next JDK bump.
 > only a profile gate, or the absence of a default, does.
 
 - `[ ]` **Align the JWT signing key with `hc-patient-service`.** The `base64-secret` committed here differs from the microservice's in both `application-dev.yml` and `application-prod.yml`, so relayed tokens fail signature validation downstream. Source both from one env var / Consul KV entry and drop the committed values.
-- `[ ]` Fix or delete `deploy.sh` and `build-deploy.sh`: both were copied from the admin gateway and still tag/push `admingateway` and expect a `br-admin-gateway` directory.
+- `[x]` **Deleted `deploy.sh` and `build-deploy.sh` (2026-08-11).** Both were copies from the admin gateway: `deploy.sh` tagged and pushed `admingateway` to `docker-registry.jojoaddison.net/hc/`, and `build-deploy.sh` additionally ran `git pull -r`, created a `v$version` tag in THIS repo, and `cd`'d into a `br-admin-gateway` directory. Deleted rather than fixed, because `hc-patient/deploy` already owns deployment and a second script here could only ever drift from it.
+
+  Prompted by `deploy.sh` finally being run by mistake, from this directory instead of `hc-patient/deploy`. It failed to find an `admingateway` image, pushed nothing, printed **`build and deploy completed.`** and exited 0 — a false success that read as a completed production deploy. That is the argument against leaving a wrong script in place with a warning in the docs: the warning is only read by someone who already suspects a problem.
 - `[ ]` Delete the leftover `angular.json` — `skipClient: true`, there is no `src/main/webapp`, and it builds nothing.
 - `[ ]` Delete the leftover `webpack/` directory (`environment.js`, `proxy.conf.js`, `webpack.custom.js`, `logo-jhipster.png`) for the same reason — it is tracked, and nothing in a `skipClient` app reads it. Worth noting before deleting: its `proxy.conf.js` already targeted **5505**, which is corroboration that 5505 was the gateway's intended port all along and 5503 was the drift.
 - `[ ]` Wire CI. No workflows exist in `.github/`; `ci:backend:test` and `ci:server:await:patientgateway` are unused entry points. The dashboard repo publishes to GHCR — mirror or justify a different target.
