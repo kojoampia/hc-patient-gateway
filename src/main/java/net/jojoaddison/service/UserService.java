@@ -3,6 +3,7 @@ package net.jojoaddison.service;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.regex.Pattern;
 import net.jojoaddison.config.Constants;
 import net.jojoaddison.domain.Authority;
 import net.jojoaddison.domain.User;
@@ -34,6 +35,12 @@ public class UserService {
 
     /** How many free alternatives the look-ahead offers when a login is taken. */
     static final int MAX_SUGGESTIONS = 3;
+
+    /**
+     * Compiled once for the class rather than per call. Every candidate is re-checked against it, so
+     * String.matches() here would recompile the expression sixteen times per taken username.
+     */
+    private static final Pattern LOGIN_PATTERN = Pattern.compile(Constants.LOGIN_REGEX);
 
     /** Matches the {@code @Size} on ManagedUserVM.login; a longer suggestion could not be registered. */
     private static final int MAX_LOGIN_LENGTH = 50;
@@ -322,6 +329,12 @@ public class UserService {
      * @return availability and, when taken, up to {@value #MAX_SUGGESTIONS} free alternatives.
      */
     public Mono<UsernameAvailabilityDTO> checkUsernameAvailability(String login) {
+// toLowerCase() with no Locale, matching registerUser above. That is deliberate and it is NOT the
+// usually-correct Locale.ROOT: what matters here is agreeing with registration, not being right in
+// isolation. Both use the default locale, so both fold "I" the same way; using Locale.ROOT in only
+// one of them would make the look-ahead and the registration disagree in a Turkish locale, where
+// "I".toLowerCase() is a dotless "ı". If this is ever moved to Locale.ROOT, move registerUser,
+// createUser and updateUser with it, and expect existing logins folded the old way to need a look.
 String normalized = login.toLowerCase();
         return isFree(normalized).flatMap(free -> {
             if (Boolean.TRUE.equals(free)) {
@@ -364,19 +377,17 @@ String normalized = login.toLowerCase();
      * the base is truncated to fit within 50 characters, and truncation can land mid-way through an
      * email-shaped login and leave something the registration validator would reject.
      */
-static List<String> suggestionsFor(String login) {
-    java.util.regex.Pattern loginPattern = java.util.regex.Pattern.compile(Constants.LOGIN_REGEX);
-    List<String> candidates = new ArrayList<>();
-    for (String suffix : SUGGESTION_SUFFIXES) {
-        int room = MAX_LOGIN_LENGTH - suffix.length();
-        String base = login.length() > room ? login.substring(0, room) : login;
-        String candidate = base + suffix;
-        if (!candidate.equals(login) && loginPattern.matcher(candidate).matches() && !candidates.contains(candidate)) {
-            candidates.add(candidate);
+    static List<String> suggestionsFor(String login) {
+        List<String> candidates = new ArrayList<>();
+        for (String suffix : SUGGESTION_SUFFIXES) {
+            int room = MAX_LOGIN_LENGTH - suffix.length();
+            String base = login.length() > room ? login.substring(0, room) : login;
+            String candidate = base + suffix;
+            if (!candidate.equals(login) && LOGIN_PATTERN.matcher(candidate).matches() && !candidates.contains(candidate)) {
+                candidates.add(candidate);
+            }
         }
-    }
-    return candidates;
-}
+        return candidates;
     }
 
     public Mono<User> getUserWithAuthorities() {
