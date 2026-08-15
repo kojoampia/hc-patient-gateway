@@ -1,0 +1,35 @@
+{
+  "dev": {
+    "users": [
+      {
+        "id": "user-demo-grace",
+        "login": "grace",
+        "email": "grace@localhost",
+        "password": "Grace@01234",
+        "firstName": "Grace",
+        "lastName": "Mensah",
+        "activated": true,
+        "authorities": ["ROLE_PROFESSIONAL", "ROLE_USER"]
+      },
+      {
+        "id": "user-demo-ophelia",
+        "login": "ophelia",
+        "firstName": "Ophelia",
+        "lastName": "Gaisie",
+        "authorities": ["ROLE_ANGEL", "ROLE_USER"]
+      }
+    ],
+    "professionals": [{ "id": "professional-grace", "firstName": "Grace", "lastName": "Mensah" }]
+  },
+  "test": {
+    "users": [
+      {
+        "id": "user-demo-test-only",
+        "login": "testonly",
+        "firstName": "Test",
+        "lastName": "Only",
+        "authorities": ["ROLE_USER"]
+      }
+    ]
+  }
+}
