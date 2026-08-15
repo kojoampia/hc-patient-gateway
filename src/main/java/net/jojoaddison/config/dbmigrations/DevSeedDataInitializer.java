@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import net.jojoaddison.config.Constants;
 import net.jojoaddison.domain.Authority;
@@ -155,6 +156,8 @@ public class DevSeedDataInitializer implements ApplicationRunner {
             LOG.warn("hc.seed.location points at {}, which does not exist; no seed accounts will be loaded", location);
             return null;
         }
+        try (InputStream source = resource.getInputStream()) {
+            return objectMapper.readValue(source, SeedDocument.class);
         } catch (IOException | RuntimeException e) {
             LOG.warn("Failed to read seed accounts from {}; none will be loaded", location, e);
             return null;
@@ -166,7 +169,7 @@ public class DevSeedDataInitializer implements ApplicationRunner {
             LOG.debug("The seed document carries no '{}' accounts", profile);
             return;
         }
-        data.users.stream().filter(java.util.Objects::nonNull).forEach(this::createUserIfMissing);
+        data.users.stream().filter(Objects::nonNull).forEach(this::createUserIfMissing);
     }
 
     private void createUserIfMissing(SeedUser seedUser) {
