@@ -155,10 +155,8 @@ public class DevSeedDataInitializer implements ApplicationRunner {
             LOG.warn("hc.seed.location points at {}, which does not exist; no seed accounts will be loaded", location);
             return null;
         }
-        try (InputStream source = resource.getInputStream()) {
-            return objectMapper.readValue(source, SeedDocument.class);
         } catch (IOException | RuntimeException e) {
-            LOG.error("Failed to read seed accounts from {}; none will be loaded", location, e);
+            LOG.warn("Failed to read seed accounts from {}; none will be loaded", location, e);
             return null;
         }
     }
