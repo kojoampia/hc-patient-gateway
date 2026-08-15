@@ -176,7 +176,9 @@ public class DevSeedDataInitializer implements ApplicationRunner {
         }
 
         User user = new User();
-        user.setId(seedUser.id);
+        if (seedUser.id != null && !seedUser.id.isBlank()) {
+            user.setId(seedUser.id);
+        }
         user.setLogin(seedUser.login);
         user.setPassword(passwordEncoder.encode(seedUser.resolvePassword()));
         user.setFirstName(seedUser.firstName);
