@@ -164,11 +164,11 @@ public class DevSeedDataInitializer implements ApplicationRunner {
     }
 
     private void seed(String profile, ProfileData data) {
-        if (data == null || data.users.isEmpty()) {
+        if (data == null || data.users == null || data.users.isEmpty()) {
             LOG.debug("The seed document carries no '{}' accounts", profile);
             return;
         }
-        data.users.forEach(this::createUserIfMissing);
+        data.users.stream().filter(java.util.Objects::nonNull).forEach(this::createUserIfMissing);
     }
 
     private void createUserIfMissing(SeedUser seedUser) {
