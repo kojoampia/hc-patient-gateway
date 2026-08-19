@@ -38,7 +38,7 @@ browser (hc-patient-dashboard, ng serve :4200) → this gateway :5505 → Consul
 - The default filter is `JWTRelay` (`security/jwt/JWTRelayGatewayFilterFactory`): it decodes the bearer token and forwards it downstream.
 - This service owns user management; `hc-patient-service` runs with `skipUserManagement: true` and only validates tokens.
 - **Known break:** the committed `base64-secret` here differs from the microservice's in both `application-dev.yml` and `application-prod.yml`, so a relayed token fails validation downstream until both are sourced from one env var / Consul KV entry. Tracked as Phase A in `patient-gateway.md`.
-- Authorities are only `ROLE_ADMIN`, `ROLE_USER`, `ROLE_ANONYMOUS` — there is no `PATIENT`/`ANGEL` role yet despite what the subsystem blueprint assumes.
+- Authorities are `ROLE_ADMIN`, `ROLE_USER`, `ROLE_ANONYMOUS`, `ROLE_PATIENT`, `ROLE_ANGEL` and `ROLE_PROFESSIONAL`. Registration grants **`ROLE_USER` + `ROLE_PATIENT`**; a nominated care angel's account additionally gets `ROLE_ANGEL`. Note what `ROLE_ANGEL` does _not_ do: an angel's authority to act for a patient comes from an `ACTIVE` `CareDelegation` that `hc-patient-service` re-reads on every request, never from the role. The role is for menus and for telling people apart.
 
 ## Commands
 
@@ -77,9 +77,9 @@ Layer boundaries are enforced at build time by ArchUnit (`src/test/java/net/jojo
 
 `src/main/java/net/jojoaddison/`
 
-- `web/rest` — `AuthenticateController` (issues JWTs), `AccountResource`, `UserResource` (`/api/admin/users`), `PublicUserResource` (`/api/users`), `AuthorityResource`, `GatewayResource` (`/api/gateway/routes`), `PatientGatewayKafkaResource`; `web/rest/errors` for RFC 7807 translation; `web/rest/vm` for `LoginVM`, `ManagedUserVM`, `KeyAndPasswordVM`, `RouteVM`.
+- `web/rest` — `AuthenticateController` (issues JWTs), `AccountResource`, `CareAngelResource` (`/api/care-angels`), `UserResource` (`/api/admin/users`), `PublicUserResource` (`/api/users`), `AuthorityResource`, `GatewayResource` (`/api/gateway/routes`), `PatientGatewayKafkaResource`; `web/rest/errors` for RFC 7807 translation; `web/rest/vm` for `LoginVM`, `ManagedUserVM`, `KeyAndPasswordVM`, `RouteVM`.
 - `web/filter` — `SpaWebFilter`, `ModifyServersOpenApiFilter`.
-- `service` — `UserService`, `MailService`, the account exception types, `service/dto` (`UserDTO`, `AdminUserDTO`, `PasswordChangeDTO`) and `service/mapper/UserMapper` (MapStruct).
+- `service` — `UserService`, `MailService`, `CareAngelService`, the account exception types, `service/dto` (`UserDTO`, `AdminUserDTO`, `PasswordChangeDTO`, `CareAngelAccountDTO`), `service/mapper/UserMapper` (MapStruct), and `service/event` (`PatientEventPublisher`, `CareDelegationMailer`).
 - `repository` — `UserRepository`, `AuthorityRepository` (reactive Spring Data Mongo).
 - `domain` — `User`, `Authority`, `AbstractAuditingEntity`.
 - `security` — `AuthoritiesConstants`, `SecurityUtils`, `DomainUserDetailsService`, `UserNotActivatedException`, and `security/jwt/JWTRelayGatewayFilterFactory`.
@@ -87,6 +87,21 @@ Layer boundaries are enforced at build time by ArchUnit (`src/test/java/net/jojo
 - `broker` — `KafkaConsumer`/`KafkaProducer`; `management` — `SecurityMetersService`; `aop/logging` — logging aspect.
 
 Security rules, the anonymous/admin path lists, seed data, and the endpoint inventory are documented in `README.md` — keep it in sync when they change.
+
+## Care angels, and the event stream (2026-08-19)
+
+`docs/onboarding.md` is the plan of record; §16 is the contract.
+
+- **`POST /api/care-angels`** finds or creates the account a patient's nominated care angel signs in with. An email that already has an account is granted `ROLE_ANGEL` rather than given a second one. A new account is created **already activated** with a random UUID password nobody knows, and invited by the ordinary password-reset mail — which is what makes "cannot authenticate until they set a password" true without a new flag, and leaves `GET /api/activate`'s contract alone. The reset key is never returned to the caller; it goes to the nominee's inbox and nowhere else.
+- **Login derivation:** `Grace Mensah` -> `ge_mensah`. Numeric suffix on collision, accents transliterated because `LOGIN_REGEX` permits only `[_.@A-Za-z0-9-]`, and a fallback to the email's local part when there is no usable surname.
+- **`patient-events`** carries the whole patient journey. This service publishes `AccountCreated` and `AccountActivated`, and consumes `CareDelegationChanged` back off the same topic to send the delegation mails — only this service can send mail, and only `hc-patient-service` knows when a delegation changed.
+- **Nothing here authorizes a care angel.** `ROLE_ANGEL` is informational; the authority to act for a patient is an `ACTIVE` `CareDelegation` that `hc-patient-service` re-reads per request.
+
+Three traps, all of which cost time on the way in:
+
+- **`src/test/resources/config/application.yml` is the same classpath resource as the main one** and replaces it wholesale rather than merging. Anything configured only in main is configured for production and for nothing any test can see. Three separate defects came from this — a stream binding, a Kafka key serializer, and the Abofonsa route — each with a green suite. **Mirror every configuration change into both files.**
+- **BlockHound earns its keep.** It caught `PatientEventPublisher` building its envelope on a Netty event loop, because `UUID.randomUUID()` draws on `SecureRandom` and can block. The whole publish runs on `boundedElastic`, not just the send.
+- **`flatMap` into a shared `HashSet` is a race** that passes alone and fails in a full class run. Both places that resolve authorities use `concatMap` + `collect` for that reason.
 
 ## Constraints
 
