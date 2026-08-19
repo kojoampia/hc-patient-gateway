@@ -139,14 +139,38 @@ spring:
           httpclient:
             pool:
               max-connections: 1000
+          # A deliberate exception to discovery-based routing: Abofonsa is a different product on a different host,
+          # not a service in this subsystem's Consul, so there is nothing to discover.
+          #
+          # It is proxied rather than called from the browser because the dashboard builds same-origin in production
+          # (SERVER_API_URL empty, <base href="/">), no CORS is configured anywhere in this subsystem, and production
+          # enforces a CSP. A direct call would need all three changed to fetch a price list.
+          routes:
+            - id: abofonsa-plans
+              uri: ${abofonsa.base-url:https://web.abofonsa.com}
+              predicates:
+                - Path=/api/plans
+              filters:
+                # Abofonsa's own path. Rewritten here so the dashboard never has to know another product's URL shape.
+                - SetPath=/api/v1/content/plans
     function:
-      definition: kafkaConsumer;kafkaProducer
+      definition: kafkaConsumer;kafkaProducer;patientEventsConsumer
     stream:
       kafka:
         binder:
           replicationFactor: 1
           auto-create-topics: true
           brokers: localhost:9092
+        bindings:
+          patientEvents-out-0:
+            producer:
+              # messageKeyExpression yields a String, and the binder's default key serializer is ByteArraySerializer —
+              # which fails at send time with a ClassCastException, not at startup. In a service that swallows publish
+              # failures by design that is silent: every event is lost and every test still passes.
+              configuration:
+                key.serializer: org.apache.kafka.common.serialization.StringSerializer
+              # One patient's events share a partition, and therefore an order.
+              messageKeyExpression: headers['patientKey']
       bindings:
         binding-out-0:
           content-type: text/plain
@@ -157,6 +181,18 @@ spring:
           group: patient-gateway
         kafkaProducer-out-0:
           content-type: text/plain
+          group: patient-gateway
+        # The patient journey. The patient service publishes onboarding and delegation onto the same topic; this
+        # service contributes the two account events that happen before a patient record exists at all.
+        patientEvents-out-0:
+          destination: patient-events
+          content-type: application/json
+        # Consumed back off the same topic to send the delegation emails. The group matters: without one every
+        # instance would deliver its own copy, and a patient would be told their care angel stepped down once per
+        # running gateway.
+        patientEventsConsumer-in-0:
+          destination: patient-events
+          content-type: application/json
           group: patient-gateway
   profiles:
     # The commented value for `active` can be replaced with valid Spring profiles to load.

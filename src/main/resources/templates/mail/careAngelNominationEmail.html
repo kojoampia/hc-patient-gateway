@@ -1,0 +1,24 @@
+<!doctype html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${#locale.language}" lang="en">
+  <head>
+    <title th:text="#{email.careangel.title}">You have been named a care angel</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <link rel="icon" th:href="@{|${baseUrl}/favicon.ico|}" />
+  </head>
+  <body>
+    <p th:text="#{email.careangel.greeting(${user.login})}">Dear</p>
+    <p th:text="#{email.careangel.text1}">Somebody has asked you to be their care angel.</p>
+    <p th:text="#{email.careangel.text2}">
+      Accepting means you will be able to see and update their health record, and act for them if they are ever unable to. Nothing happens
+      until you accept, and you can decline or step down at any time.
+    </p>
+    <p>
+      <a th:with="url=(@{|${baseUrl}/account/reset/finish?key=${user.resetKey}|})" th:href="${url}" th:text="${url}">Set your password</a>
+    </p>
+    <p>
+      <span th:text="#{email.careangel.text3}">Regards, </span>
+      <br />
+      <em th:text="#{email.signature}">Abofonsa BridgeCare.</em>
+    </p>
+  </body>
+</html>

@@ -148,4 +148,39 @@ public class MailService {
         log.debug("Sending password reset email to '{}'", user.getEmail());
         this.sendEmailFromTemplate(user, "mail/passwordResetEmail", "email.reset.title");
     }
+
+    /**
+     * Invites a newly created care-angel account to set a password.
+     *
+     * <p>Doubles as the nomination and the way in. The account was created already activated with a password nobody
+     * knows, so this link is the only route to it — which is what makes "cannot authenticate until they set a
+     * password" true without a new flag anywhere.</p>
+     */
+    public void sendCareAngelNominationMail(User user) {
+        log.debug("Sending care angel nomination email to '{}'", user.getEmail());
+        this.sendEmailFromTemplate(user, "mail/careAngelNominationEmail", "email.careangel.title");
+    }
+
+    /** Tells somebody who already has an account that they have been nominated. No reset link: they have a password. */
+    public void sendCareAngelNominationToExistingUserMail(User user) {
+        log.debug("Sending care angel nomination email to existing user '{}'", user.getEmail());
+        this.sendEmailFromTemplate(user, "mail/careAngelInviteExistingEmail", "email.careangel.title");
+    }
+
+    /**
+     * Tells a patient their care angel has stepped down.
+     *
+     * <p>The one delegation mail that is not a courtesy. A patient who silently has nobody able to act for them is
+     * exactly the person the arrangement exists to protect, and only they can nominate a replacement.</p>
+     */
+    public void sendCareAngelSteppedDownMail(User user) {
+        log.debug("Sending care angel stepped-down email to '{}'", user.getEmail());
+        this.sendEmailFromTemplate(user, "mail/careAngelSteppedDownEmail", "email.delegation.ended.title");
+    }
+
+    /** Tells an angel their access has ended, whoever ended it. */
+    public void sendCareAngelAccessEndedMail(User user) {
+        log.debug("Sending care angel access-ended email to '{}'", user.getEmail());
+        this.sendEmailFromTemplate(user, "mail/careAngelAccessEndedEmail", "email.delegation.revoked.title");
+    }
 }
