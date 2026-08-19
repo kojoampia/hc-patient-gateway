@@ -95,8 +95,8 @@ before the next JDK bump.
 
 ## Open decisions
 
-1. **Patient/angel roles.** `ROLE_PATIENT` and `ROLE_ANGEL` now exist in `AuthoritiesConstants` and are seeded, but nothing consumes them yet: no route or method authorizes on them, `hc-patient-service` does not check them, and the dashboard's `Authority` enum still knows only ADMIN/USER. Decide what each role may actually do before wiring clients to it.
-2. **Registration ownership.** Onboarding (basic info → identification → plan) spans this service's `POST /api/register` and the patient service's profile/subscription domain. Decide which service owns the transaction and what happens if the second step fails.
+1. ~~**Patient/angel roles.**~~ Settled 2026-08-19, and the answer is the interesting part: **neither role authorizes anything.** Registration grants `ROLE_USER` + `ROLE_PATIENT`; a nominated care angel's account gets `ROLE_ANGEL`; the dashboard's `Authority` enum now knows all four. But a patient's access to their own record comes from `hc-patient-service` resolving their email to a `Profile`, and an angel's comes from an `ACTIVE` `CareDelegation` that service re-reads on every request. The roles are for menus and for telling people apart. Authorizing on `ROLE_ANGEL` would have meant a revoked angel keeping access until their token expired — days, with `rememberMe`.
+2. ~~**Registration ownership.**~~ Settled 2026-08-19: **the patient service owns onboarding; this service owns accounts, and nothing owns a transaction** because there is none to own. Registration stays exactly as it was. The client calls `POST /api/register` here, then the onboarding endpoints there, and each step is independently meaningful so a failure part-way leaves a resumable state rather than a corrupt one — which is what makes the missing transaction affordable on standalone Mongo. This service gained one onboarding-adjacent endpoint, `POST /api/care-angels`, only because creating a user is something no other service can do.
 3. **Where rate limiting lives.** Neither service implements it. The gateway is the natural choke point; confirm before adding it downstream.
 
 ## Baseline — already in place
@@ -182,10 +182,20 @@ Still open:
 
 ## Phase B — auth/onboarding features
 
-- `[~]` `PATIENT`/`ANGEL` authorities: the constants and Mongock seeds exist. Still to do — decide the authorization rules that use them, extend `AuthorityResource` expectations, and teach the JWT `auth` claim consumers in `hc-patient-service` and the dashboard about them (decision 1).
-- `[ ]` Define role assignment at registration — `registerUser(...)` currently forces `ROLE_USER` regardless of the incoming DTO.
-- `[ ]` Agree the onboarding contract with `hc-patient-service` (decision 2), including whether the gateway proxies a single onboarding call or the client makes two.
-- `[ ]` Expose whatever profile linkage the clients need so a freshly registered user can be mapped to a `Profile` in the microservice.
+**Built 2026-08-19.** `docs/onboarding.md` is the plan of record; §16 is the contract.
+
+- `[x]` `PATIENT`/`ANGEL` authorities — assigned, and consumed by the dashboard's `Authority` enum. The authorization rules turned out to be that there are none: see decision 1.
+- `[x]` Role assignment at registration — `ROLE_USER` + `ROLE_PATIENT`. Two notes for whoever touches this next. The `ManagedUserVM`'s own `authorities` are still ignored, deliberately: registration decides, not the registrant, and `testRegisterAdminIsIgnored` pins it. And resolving the two authorities with `flatMap` into a shared `HashSet` is a race that passes alone and fails in a full class run — it is `concatMap` + `collect` for that reason, in both places that do it.
+- `[x]` The onboarding contract — agreed and built; the client makes two calls (decision 2).
+- `[x]` Profile linkage — none was needed. The JWT's `email` claim was already the join, and onboarding mints the `patientId` on the patient-service side.
+- `[x]` **`POST /api/care-angels`** — finds or creates the account a nominated angel signs in with. An email that already has an account gets `ROLE_ANGEL` rather than a second account. A new one is created _already activated_ with a random UUID password nobody knows, and invited by the ordinary password-reset mail: that satisfies "cannot authenticate until they set a password" by construction, changes no endpoint contract, and leaves the web activation screen alone. Login derives as `Grace Mensah` -> `ge_mensah`, with a numeric suffix on collision, accents transliterated (`LOGIN_REGEX` would refuse them) and a fallback to the email's local part.
+- `[x]` **Account events and the delegation mails.** `AccountCreated` and `AccountActivated` publish to `patient-events`; `CareDelegationChanged` is consumed off the same topic to send the mails, because only this service can send mail and only the patient service knows when a delegation changed. An angel stepping down mails the patient — they are left with nobody able to act for them and only they can nominate a replacement; a patient revoking is not told what they just did.
+- `[x]` **`/api/plans`** proxied to Abofonsa's content API, a deliberate exception to discovery-based routing.
+
+Two traps worth knowing before adding anything here:
+
+- **`src/test/resources/config/application.yml` is the same classpath resource as the main one** and replaces it wholesale rather than merging. Anything configured only in main is configured for production and for nothing any test can see — this caused three separate defects with three different symptoms and a green suite each time. Mirror every configuration change into both.
+- **BlockHound is not decoration.** It caught the event publisher building its envelope on a Netty event loop, because `UUID.randomUUID()` draws on `SecureRandom` and can block. The whole publish runs on `boundedElastic`, not just the send — the same lesson `MailService` cost a production incident to learn.
 
 ## Phase C — test coverage backlog
 

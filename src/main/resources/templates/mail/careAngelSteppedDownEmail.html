@@ -1,0 +1,25 @@
+<!doctype html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${#locale.language}" lang="en">
+  <head>
+    <title th:text="#{email.delegation.ended.title}">Your care angel has stepped down</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <link rel="icon" th:href="@{|${baseUrl}/favicon.ico|}" />
+  </head>
+  <body>
+    <p th:text="#{email.delegation.ended.greeting(${user.login})}">Dear</p>
+    <!-- The whole reason this mail exists: a patient who silently has no care angel is exactly the person the
+         arrangement is meant to protect. -->
+    <p th:text="#{email.delegation.ended.text1}">
+      Your care angel has stepped down, so nobody is currently able to act for you. You can nominate somebody else from your profile
+      whenever you are ready.
+    </p>
+    <p>
+      <a th:with="url=(@{|${baseUrl}/profile|})" th:href="${url}" th:text="${url}">Nominate a care angel</a>
+    </p>
+    <p>
+      <span th:text="#{email.delegation.ended.text2}">Regards, </span>
+      <br />
+      <em th:text="#{email.signature}">Abofonsa BridgeCare.</em>
+    </p>
+  </body>
+</html>

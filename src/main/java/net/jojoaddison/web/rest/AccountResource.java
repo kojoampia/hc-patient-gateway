@@ -1,7 +1,10 @@
 package net.jojoaddison.web.rest;
 
 import jakarta.validation.Valid;
+import java.time.Instant;
+import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 import net.jojoaddison.repository.UserRepository;
 import net.jojoaddison.security.SecurityUtils;
 import net.jojoaddison.service.MailService;
@@ -10,6 +13,8 @@ import net.jojoaddison.service.UserService;
 import net.jojoaddison.service.dto.AdminUserDTO;
 import net.jojoaddison.service.dto.PasswordChangeDTO;
 import net.jojoaddison.service.dto.UsernameAvailabilityDTO;
+import net.jojoaddison.service.event.PatientEventPublisher;
+import net.jojoaddison.service.event.PatientEventType;
 import net.jojoaddison.web.rest.errors.*;
 import net.jojoaddison.web.rest.vm.KeyAndPasswordVM;
 import net.jojoaddison.web.rest.vm.ManagedUserVM;
@@ -45,18 +50,22 @@ public class AccountResource {
 
     private final MailService mailService;
 
+    private final PatientEventPublisher events;
+
     private final TokenRevocationService tokenRevocationService;
 
     public AccountResource(
         UserRepository userRepository,
         UserService userService,
         MailService mailService,
-        TokenRevocationService tokenRevocationService
+        TokenRevocationService tokenRevocationService,
+        PatientEventPublisher events
     ) {
         this.userRepository = userRepository;
         this.userService = userService;
         this.mailService = mailService;
         this.tokenRevocationService = tokenRevocationService;
+        this.events = events;
     }
 
     /**
@@ -73,7 +82,26 @@ public class AccountResource {
         if (isPasswordLengthInvalid(managedUserVM.getPassword())) {
             throw new InvalidPasswordException();
         }
-        return userService.registerUser(managedUserVM, managedUserVM.getPassword()).doOnSuccess(mailService::sendActivationEmail).then();
+        return userService
+            .registerUser(managedUserVM, managedUserVM.getPassword())
+            .doOnSuccess(mailService::sendActivationEmail)
+            .doOnSuccess(
+                user ->
+                    events.publish(
+                        PatientEventType.ACCOUNT_CREATED,
+                        user.getEmail(),
+                        user.getLogin(),
+                        Map.of(
+                            "authorities",
+                            user.getAuthorities().stream().map(a -> a.getName()).sorted().collect(Collectors.joining(",")),
+                            "langKey",
+                            String.valueOf(user.getLangKey()),
+                            "activated",
+                            user.isActivated()
+                        )
+                    )
+            )
+            .then();
     }
 
     /**
@@ -110,6 +138,15 @@ public class AccountResource {
         return userService
             .activateRegistration(key)
             .switchIfEmpty(Mono.error(new AccountResourceException("No user was found for this activation key")))
+            .doOnSuccess(
+                user ->
+                    events.publish(
+                        PatientEventType.ACCOUNT_ACTIVATED,
+                        user.getEmail(),
+                        user.getLogin(),
+                        Map.of("activatedAt", Instant.now().toString())
+                    )
+            )
             .then();
     }
 

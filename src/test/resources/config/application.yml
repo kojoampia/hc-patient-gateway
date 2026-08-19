@@ -29,6 +29,20 @@ spring:
     exclude:
       - org.springframework.cloud.gateway.config.GatewayMetricsAutoConfiguration
   cloud:
+    # Mirrors the main config. src/test/resources/config/application.yml is the SAME classpath resource as the main
+    # one and shadows it completely rather than merging — so anything configured only there is configured for
+    # production and for nothing the tests can see. That has now caught three separate defects: a stream binding, a
+    # key serializer, and this route.
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: abofonsa-plans
+              uri: ${abofonsa.base-url:https://web.abofonsa.com}
+              predicates:
+                - Path=/api/plans
+              filters:
+                - SetPath=/api/v1/content/plans
     consul:
       discovery:
         enabled: false
@@ -37,12 +51,22 @@ spring:
         enabled: false
       enabled: false
     function:
-      definition: kafkaConsumer;kafkaProducer
+      definition: kafkaConsumer;kafkaProducer;patientEventsConsumer
     stream:
       kafka:
         binder:
           replicationFactor: 1
           auto-create-topics: true
+        bindings:
+          patientEvents-out-0:
+            producer:
+              # messageKeyExpression yields a String, and the binder's default key serializer is ByteArraySerializer —
+              # which fails at send time with a ClassCastException, not at startup. In a service that swallows publish
+              # failures by design that is silent: every event is lost and every test still passes.
+              configuration:
+                key.serializer: org.apache.kafka.common.serialization.StringSerializer
+              # One patient's events share a partition, and therefore an order.
+              messageKeyExpression: headers['patientKey']
       bindings:
         binding-out-0:
           content-type: text/plain
@@ -53,6 +77,18 @@ spring:
           group: patient-gateway
         kafkaProducer-out-0:
           content-type: text/plain
+          group: patient-gateway
+        # The patient journey. The patient service publishes onboarding and delegation onto the same topic; this
+        # service contributes the two account events that happen before a patient record exists at all.
+        patientEvents-out-0:
+          destination: patient-events
+          content-type: application/json
+        # Consumed back off the same topic to send the delegation emails. The group matters: without one every
+        # instance would deliver its own copy, and a patient would be told their care angel stepped down once per
+        # running gateway.
+        patientEventsConsumer-in-0:
+          destination: patient-events
+          content-type: application/json
           group: patient-gateway
   # Jackson 3 removed SerializationFeature.WRITE_DURATIONS_AS_TIMESTAMPS; durations serialise as
   # ISO-8601 strings by default, so no spring.jackson.serialization override is needed here.

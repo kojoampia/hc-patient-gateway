@@ -1,0 +1,19 @@
+<!doctype html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${#locale.language}" lang="en">
+  <head>
+    <title th:text="#{email.delegation.revoked.title}">Your care connection has ended</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <link rel="icon" th:href="@{|${baseUrl}/favicon.ico|}" />
+  </head>
+  <body>
+    <p th:text="#{email.delegation.revoked.greeting(${user.login})}">Dear</p>
+    <p th:text="#{email.delegation.revoked.text1}">
+      The care connection you held has ended, and you no longer have access to that person's health record. Your own account is unaffected.
+    </p>
+    <p>
+      <span th:text="#{email.delegation.revoked.text2}">Regards, </span>
+      <br />
+      <em th:text="#{email.signature}">Abofonsa BridgeCare.</em>
+    </p>
+  </body>
+</html>

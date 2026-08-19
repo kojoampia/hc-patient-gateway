@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import net.jojoaddison.config.Constants;
 import net.jojoaddison.domain.Authority;
 import net.jojoaddison.domain.User;
@@ -163,16 +164,27 @@ public class UserService {
                     return newUser;
                 })
             )
-            .flatMap(newUser -> {
-                Set<Authority> authorities = new HashSet<>();
-                return authorityRepository
-                    .findById(AuthoritiesConstants.USER)
-                    .map(authorities::add)
-                    .thenReturn(newUser)
-                    .doOnNext(user -> user.setAuthorities(authorities))
+            .flatMap(newUser ->
+                // ROLE_PATIENT alongside ROLE_USER, not instead of it. Everything that already guards a route checks
+                // ROLE_USER, so dropping it would sign every existing screen out from under them; ROLE_PATIENT is what
+                // lets the portal and the gateway tell a patient from a clinician without inspecting their records.
+                //
+                // Note what the role does *not* do: a patient's access to their own record comes from PatientScope
+                // resolving their email to a profile, and a care angel's comes from an active delegation. Neither
+                // consults this. The role is for menus and for telling people apart.
+                //
+                // Collected rather than accumulated into a set from doOnNext: flatMap resolves its sources
+                // concurrently, and two threads writing a plain HashSet is a race that shows up only under load —
+                // which is exactly how it showed up, passing alone and failing in a full run.
+                Flux.fromIterable(List.of(AuthoritiesConstants.USER, AuthoritiesConstants.PATIENT))
+                    .concatMap(authorityRepository::findById)
+                    .collect(Collectors.toCollection(HashSet<Authority>::new))
+                    .map(authorities -> {
+                        newUser.setAuthorities(authorities);
+                        return newUser;
+                    })
                     .flatMap(this::saveUser)
-                    .doOnNext(user -> log.debug("Created Information for User: {}", user));
-            });
+                    .doOnNext(user -> log.debug("Created Information for User: {}", user)));
     }
 
     public Mono<User> createUser(AdminUserDTO userDTO) {
@@ -329,13 +341,13 @@ public class UserService {
      * @return availability and, when taken, up to {@value #MAX_SUGGESTIONS} free alternatives.
      */
     public Mono<UsernameAvailabilityDTO> checkUsernameAvailability(String login) {
-// toLowerCase() with no Locale, matching registerUser above. That is deliberate and it is NOT the
-// usually-correct Locale.ROOT: what matters here is agreeing with registration, not being right in
-// isolation. Both use the default locale, so both fold "I" the same way; using Locale.ROOT in only
-// one of them would make the look-ahead and the registration disagree in a Turkish locale, where
-// "I".toLowerCase() is a dotless "ı". If this is ever moved to Locale.ROOT, move registerUser,
-// createUser and updateUser with it, and expect existing logins folded the old way to need a look.
-String normalized = login.toLowerCase();
+        // toLowerCase() with no Locale, matching registerUser above. That is deliberate and it is NOT the
+        // usually-correct Locale.ROOT: what matters here is agreeing with registration, not being right in
+        // isolation. Both use the default locale, so both fold "I" the same way; using Locale.ROOT in only
+        // one of them would make the look-ahead and the registration disagree in a Turkish locale, where
+        // "I".toLowerCase() is a dotless "ı". If this is ever moved to Locale.ROOT, move registerUser,
+        // createUser and updateUser with it, and expect existing logins folded the old way to need a look.
+        String normalized = login.toLowerCase();
         return isFree(normalized).flatMap(free -> {
             if (Boolean.TRUE.equals(free)) {
                 return Mono.just(new UsernameAvailabilityDTO(true, List.of()));

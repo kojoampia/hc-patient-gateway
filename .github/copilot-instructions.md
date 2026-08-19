@@ -39,6 +39,23 @@
   - `npm run backend:nohttp:test`
   - `./mvnw -Pprod clean verify sonar:sonar -Dsonar.login=admin -Dsonar.password=admin`
 
+## Care angels and events (2026-08-19)
+
+- `POST /api/care-angels` finds or creates the account a nominated care angel signs in with. An email
+  that already has an account is granted `ROLE_ANGEL` rather than given a second one. The reset key is
+  never returned to the caller — it goes to the nominee's inbox and nowhere else.
+- Registration grants `ROLE_USER` + `ROLE_PATIENT`. Neither role authorizes access to a record; that is
+  `hc-patient-service`'s business.
+- `patient-events` carries the patient journey. This service publishes the two account events and
+  consumes `CareDelegationChanged` to send the delegation mails.
+- **Publishing and mailing must run off the event loop.** `Mono.fromRunnable(...).subscribeOn(boundedElastic())`
+  — and put _all_ the work inside, not just the send: BlockHound caught `UUID.randomUUID()` blocking on
+  a Netty thread. `MailService` cost a production incident to learn this.
+- Resolving several authorities with `flatMap` into a shared `HashSet` is a race that passes alone and
+  fails under load. Use `concatMap` + `collect`.
+- `src/test/resources/config/application.yml` **replaces** the main config rather than merging with it.
+  Mirror every configuration change into both, or it is untested.
+
 ## Conventions
 
 - The build targets Java 25 (`java.version`, pinned via `maven.compiler.release`); the Maven Enforcer accepts JDK 17-25 (`[17,26)`). Maven must be >= 3.2.5.

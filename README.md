@@ -117,7 +117,7 @@ this application's production instance, and is what `MigrationsSeedNoAccountsTes
 
 - `POST /api/authenticate`
 - `GET /api/authenticate`
-- `POST /api/register`
+- `POST /api/register` — grants `ROLE_USER` + `ROLE_PATIENT`
 - `GET /api/activate?key=...`
 - `GET /api/account`
 - `POST /api/account`
@@ -138,6 +138,25 @@ this application's production instance, and is what `MigrationsSeedNoAccountsTes
 - `GET /api/admin/users`
 - `GET /api/admin/users/{login}`
 - `DELETE /api/admin/users/{login}`
+
+### Care angels
+
+- `POST /api/care-angels` — authenticated as the patient. Finds or creates the account their nominated
+  care angel signs in with, and sends the invitation. An email that already has an account is granted
+  `ROLE_ANGEL` rather than given a second one; a new account is created already activated with a
+  password nobody knows and invited by the ordinary password-reset mail. The reset key is never
+  returned — it goes to the nominee's inbox and nowhere else.
+
+  Note this grants no access to any record. That is an `ACTIVE` `CareDelegation` in
+  `hc-patient-service`, created separately and only in force once the nominee accepts.
+
+### Membership plans
+
+- `GET /api/plans?locale=en` — proxied to Abofonsa's public content API
+  (`/api/v1/content/plans`). A deliberate exception to discovery-based routing: Abofonsa is another
+  product on another host, and proxying keeps the dashboard same-origin, which matters because
+  production builds with `SERVER_API_URL` empty, no CORS is configured anywhere in this subsystem,
+  and production enforces a CSP.
 
 ### Gateway and Kafka
 

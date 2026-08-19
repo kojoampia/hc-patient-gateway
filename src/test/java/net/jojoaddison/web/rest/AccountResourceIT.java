@@ -420,9 +420,37 @@ class AccountResourceIT {
 
         Optional<User> userDup = userRepository.findOneByLogin("badguy").blockOptional();
         assertThat(userDup).isPresent();
+        // What this test is actually about: the ROLE_ADMIN the payload asked for is not granted. Registration decides
+        // the authorities, not the registrant. ROLE_PATIENT joined ROLE_USER when onboarding needed a way to tell a
+        // patient from a clinician, so the count is two — but neither of them is the one that was asked for.
         assertThat(userDup.orElseThrow().getAuthorities())
-            .hasSize(1)
-            .containsExactly(authorityRepository.findById(AuthoritiesConstants.USER).block());
+            .containsExactlyInAnyOrder(
+                authorityRepository.findById(AuthoritiesConstants.USER).block(),
+                authorityRepository.findById(AuthoritiesConstants.PATIENT).block()
+            )
+            .doesNotContain(authorityRepository.findById(AuthoritiesConstants.ADMIN).block());
+    }
+
+    @Test
+    void testRegisterGrantsPatientAlongsideUser() {
+        ManagedUserVM newPatient = new ManagedUserVM();
+        newPatient.setLogin("ama");
+        newPatient.setPassword("password");
+        newPatient.setEmail("ama@example.com");
+        newPatient.setLangKey(Constants.DEFAULT_LANGUAGE);
+
+        accountWebTestClient
+            .post()
+            .uri("/api/register")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(om.writeValueAsBytes(newPatient))
+            .exchange()
+            .expectStatus()
+            .isCreated();
+
+        assertThat(userRepository.findOneByLogin("ama").blockOptional().orElseThrow().getAuthorities())
+            .extracting(net.jojoaddison.domain.Authority::getName)
+            .containsExactlyInAnyOrder(AuthoritiesConstants.USER, AuthoritiesConstants.PATIENT);
     }
 
     @Test
