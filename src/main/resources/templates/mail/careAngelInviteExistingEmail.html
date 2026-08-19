@@ -12,9 +12,11 @@
       Accepting means you will be able to see and update their health record, and act for them if they are ever unable to. Nothing happens
       until you accept, and you can decline or step down at any time.
     </p>
-    <!-- No reset link: this person already has an account and a password of their own. -->
+    <!-- No reset link: this person already has an account and a password of their own. The link goes to the
+         nomination itself rather than to a bare sign-in page, because "sign in and find it" is how an invitation
+         goes unanswered. -->
     <p>
-      <a th:with="url=(@{|${baseUrl}/|})" th:href="${url}" th:text="${url}">Sign in</a>
+      <a th:with="url=(@{|${baseUrl}/invitations|})" th:href="${url}" th:text="${url}">Answer the nomination</a>
     </p>
     <p>
       <span th:text="#{email.careangel.text3}">Regards, </span>

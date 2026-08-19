@@ -12,9 +12,11 @@
       Accepting means you will be able to see and update their health record, and act for them if they are ever unable to. Nothing happens
       until you accept, and you can decline or step down at any time.
     </p>
+    <!-- Set a password first: this account was created with one nobody knows, so this link is the only way in. -->
     <p>
       <a th:with="url=(@{|${baseUrl}/account/reset/finish?key=${user.resetKey}|})" th:href="${url}" th:text="${url}">Set your password</a>
     </p>
+    <p th:text="#{email.careangel.text4}">Once you have signed in, the nomination is waiting under Care nominations.</p>
     <p>
       <span th:text="#{email.careangel.text3}">Regards, </span>
       <br />
