@@ -29,6 +29,20 @@ spring:
     exclude:
       - org.springframework.cloud.gateway.config.GatewayMetricsAutoConfiguration
   cloud:
+    # Mirrors the main config. src/test/resources/config/application.yml is the SAME classpath resource as the main
+    # one and shadows it completely rather than merging — so anything configured only there is configured for
+    # production and for nothing the tests can see. That has now caught three separate defects: a stream binding, a
+    # key serializer, and this route.
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: abofonsa-plans
+              uri: ${abofonsa.base-url:https://web.abofonsa.com}
+              predicates:
+                - Path=/api/plans
+              filters:
+                - SetPath=/api/v1/content/plans
     consul:
       discovery:
         enabled: false
