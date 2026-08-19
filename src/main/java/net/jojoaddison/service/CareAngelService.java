@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import net.jojoaddison.domain.Authority;
 import net.jojoaddison.domain.User;
 import net.jojoaddison.repository.AuthorityRepository;
@@ -88,12 +89,15 @@ public class CareAngelService {
             user.setResetKey(RandomUtil.generateResetKey());
             user.setResetDate(java.time.Instant.now());
 
-            Set<Authority> authorities = new HashSet<>();
+            // concatMap and collect rather than flatMap into a shared HashSet: flatMap resolves its sources
+            // concurrently, and two threads writing a plain set is a race that only shows up under load.
             return Flux.fromIterable(List.of(AuthoritiesConstants.USER, AuthoritiesConstants.ANGEL))
-                .flatMap(authorityRepository::findById)
-                .doOnNext(authorities::add)
-                .then(Mono.just(user))
-                .doOnNext(u -> u.setAuthorities(authorities))
+                .concatMap(authorityRepository::findById)
+                .collect(Collectors.toCollection(HashSet<Authority>::new))
+                .map(authorities -> {
+                    user.setAuthorities(authorities);
+                    return user;
+                })
                 .flatMap(userRepository::save)
                 .doOnNext(saved -> log.debug("Created a care angel account: {}", saved.getLogin()))
                 .map(saved -> new CareAngelAccountDTO(saved.getLogin(), saved.getEmail(), false, saved.getResetKey()));

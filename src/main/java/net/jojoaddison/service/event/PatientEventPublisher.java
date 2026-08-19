@@ -26,7 +26,9 @@ import reactor.core.scheduler.Schedulers;
  *
  * <p>A Kafka send is the same shape of hazard: {@code StreamBridge.send} resolves a binding, serializes and hands off
  * to the producer, and none of that is guaranteed non-blocking. So it goes to the bounded-elastic scheduler, and
- * {@code PatientEventPublisherIT} asserts the property directly rather than trusting BlockHound to notice.</p>
+ * {@code PatientEventPublisherUnitTest.publishingRunsOffTheCallingThread} asserts the property directly
+ * rather than trusting BlockHound to notice — though on this occasion BlockHound did, when the envelope was still
+ * being built on the calling thread.</p>
  *
  * <h2>Publishing never fails the operation</h2>
  *
