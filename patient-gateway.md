@@ -142,7 +142,20 @@ before the next JDK bump.
 > The lesson worth keeping: a comment saying a credential is for development does not make it so —
 > only a profile gate, or the absence of a default, does.
 
-- `[ ]` **Align the JWT signing key with `hc-patient-service`.** The `base64-secret` committed here differs from the microservice's in both `application-dev.yml` and `application-prod.yml`, so relayed tokens fail signature validation downstream. Source both from one env var / Consul KV entry and drop the committed values.
+- `[x]` ~~**Align the JWT signing key with `hc-patient-service`.**~~ **Done 2026-08-05**, recorded here 2026-08-21
+  after the claim was found still standing in this file, in `patient-api.md`, in `docs/CLAUDE.md` and in
+  `mobile/patient-mobile.md`. `application-dev.yml` carries the SAME committed key as the microservice — public by
+  construction and labelled as such, so `./mvnw` works with no setup in either repo — and `application-prod.yml`
+  carries `${JWT_BASE64_SECRET:}` with **no default**, so this gateway refuses to start rather than mint tokens the
+  microservice cannot validate. `.yo-rc.json` holds an empty `jwtSecretKey` in both repos.
+
+  Verified by comparing values rather than comments, across dev, prod, `.yo-rc.json` and both test configs.
+
+  **The residual risk is a partial injection** — this gateway handed a
+  `JHIPSTER_SECURITY_AUTHENTICATION_JWT_BASE64_SECRET` that the microservice was not, or the reverse. Every compose
+  file in the workspace injects one variable into both services, so it would take a hand edit; but it presents
+  exactly like the old defect, which is why the alert rule in `deploy/prod-server/observability/` names it first.
+
 - `[x]` **Deleted `deploy.sh` and `build-deploy.sh` (2026-08-11).** Both were copies from the admin gateway: `deploy.sh` tagged and pushed `admingateway` to `docker-registry.jojoaddison.net/hc/`, and `build-deploy.sh` additionally ran `git pull -r`, created a `v$version` tag in THIS repo, and `cd`'d into a `br-admin-gateway` directory. Deleted rather than fixed, because `hc-patient/deploy` already owns deployment and a second script here could only ever drift from it.
 
   Prompted by `deploy.sh` finally being run by mistake, from this directory instead of `hc-patient/deploy`. It failed to find an `admingateway` image, pushed nothing, printed **`build and deploy completed.`** and exited 0 — a false success that read as a completed production deploy. That is the argument against leaving a wrong script in place with a warning in the docs: the warning is only read by someone who already suspects a problem.
