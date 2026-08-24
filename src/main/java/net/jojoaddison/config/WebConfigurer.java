@@ -1,6 +1,5 @@
 package net.jojoaddison.config;
 
-import tools.jackson.databind.ObjectMapper;
 import net.jojoaddison.web.rest.errors.ExceptionTranslator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,6 +17,7 @@ import org.springframework.web.reactive.result.method.HandlerMethodArgumentResol
 import org.springframework.web.server.WebExceptionHandler;
 import tech.jhipster.config.JHipsterProperties;
 import tech.jhipster.web.rest.errors.ReactiveWebExceptionHandler;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Configuration of web application with Servlet 3.0 APIs.

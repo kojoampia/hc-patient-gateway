@@ -9,7 +9,7 @@
         "firstName": "Grace",
         "lastName": "Mensah",
         "activated": true,
-        "authorities": ["ROLE_PROFESSIONAL", "ROLE_USER"]
+        "authorities": ["ROLE_DOCTOR", "ROLE_USER"]
       },
       {
         "id": "user-demo-ophelia",

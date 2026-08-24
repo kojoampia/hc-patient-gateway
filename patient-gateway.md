@@ -10,6 +10,38 @@ Status legend: `[x]` done · `[~]` partial / diverges from plan · `[ ]` not sta
 
 ## What changed since the last baseline
 
+### `ROLE_PROFESSIONAL` removed; the eight disciplines issued instead (2026-08-24)
+
+The entry below is now history. `ROLE_PROFESSIONAL` was a blanket clinical authority that **only this
+gateway ever minted and only `hc-patient-service` ever checked** — a name this subsystem invented for
+itself and then required of everybody else. Because the three stacks share one JWT signing key, a
+clinician signing in to `hc-professional` reached the patient service holding `ROLE_DOCTOR`, matched no
+check, resolved to no patient, and was served empty lists rather than a refusal. Two halves of one
+platform had two names for a clinician, and only one of them was issued by the portal clinicians use.
+
+- **`AuthoritiesConstants`** drops `PROFESSIONAL` and gains the eight disciplines, spelled
+  byte-identically to `hc-professional`'s own constants. There is no shared artefact between the
+  repositories to enforce that; the api's `AuthoritiesConstantsUnitTest` is the closest thing.
+- **`ClinicalDisciplineRolesMigration`** (change unit `004`) seeds the eight, **replaces**
+  `ROLE_PROFESSIONAL` with `ROLE_DOCTOR` on every account holding it, then deletes the authority.
+  Replacing rather than stripping is deliberate: doctor is the discipline whose reach matches what the
+  blanket role granted, so nobody's capability changes on the day. Stripping without replacing would
+  have been the same outage from the other direction — an account that signs in exactly as before and
+  sees nothing.
+- **Why `003` was kept rather than deleted.** Mongock records a change unit as executed and never runs
+  it again, so deleting it would have removed nothing from any existing database: production applied it
+  on 2026-08-11 and the authority would have stayed there, on accounts and in tokens, while the patient
+  service quietly stopped honouring it. Removal has to be its own forward step.
+- **It finds holders by reading users, not by querying `authorities.name`.** `Authority`'s name is its
+  `@Id`, so the embedded subdocument's field name is a detail of how Spring Data flattens it — a query
+  that guessed wrong would match nothing, report zero holders, and look exactly like a clean run.
+- **In production it touches no account.** The authority was seeded there and granted to nobody, so the
+  net effect is eight authority documents an administrator may assign. Verify it the way `003` was
+  verified: the applied line in the gateway log, which names the count.
+- **`doctor` now holds `ROLE_DOCTOR`**, in `DevSeedDataInitializer` and in `seed-document-fixture.json`.
+  Note that seeder only creates users that are _missing_, so an existing development database is
+  migrated by `004` rather than by the seed change.
+
 ### `ROLE_PROFESSIONAL` can now be issued, and `doctor` holds it (2026-08-11)
 
 The patient service has gated cross-patient reads and its staff-only writes on `ROLE_PROFESSIONAL`
