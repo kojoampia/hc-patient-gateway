@@ -9,6 +9,12 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 /**
  * Adds the clinical-staff authority: {@code ROLE_PROFESSIONAL}.
  *
+ * <p><strong>Superseded on 2026-08-24 by {@link ClinicalDisciplineRolesMigration} (004), which removes this
+ * authority again and replaces it with the eight clinical disciplines.</strong> This class is kept rather than
+ * deleted because Mongock records a change unit as executed and never re-runs it: deleting it would have left the
+ * authority in every existing database with nothing to take it out. Read it as the record of what was applied on
+ * 2026-08-11, not as a description of what the schema holds today.</p>
+ *
  * <p>A separate change unit from {@link PatientRolesMigration} for the same reason that one is separate from
  * {@link InitialSetupMigration}: Mongock records each change unit as executed and will not run it again, so a database
  * where {@code 002} has already run would otherwise never receive the new role.</p>
@@ -34,7 +40,7 @@ public class ProfessionalRoleMigration {
 
     @Execution
     public void changeSet() {
-        SeedData.saveAuthorityIfMissing(template, AuthoritiesConstants.PROFESSIONAL);
+        SeedData.saveAuthorityIfMissing(template, AuthoritiesConstants.REMOVED_PROFESSIONAL);
     }
 
     @RollbackExecution

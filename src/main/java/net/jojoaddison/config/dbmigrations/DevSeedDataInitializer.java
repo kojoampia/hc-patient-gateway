@@ -39,8 +39,9 @@ import tools.jackson.databind.ObjectMapper;
  * which is how a production deployment came to accept {@code admin} / {@code Admin@01234}; the profile gate is the
  * whole point of this class, so do not remove it to "make production easier to log into" — that is what
  * {@link AdminBootstrapInitializer} is for. {@code doctor} makes that gate matter more than it used to: it is the only
- * fixed account anywhere that holds {@code ROLE_PROFESSIONAL}, which the patient service treats as unrestricted,
- * cross-patient access. Nothing grants it in production, where it is an administrator's to assign.</p>
+ * fixed account anywhere that holds a clinical discipline ({@code ROLE_DOCTOR} since 2026-08-24, {@code
+ * ROLE_PROFESSIONAL} before it), which the patient service treats as unrestricted, cross-patient access. Nothing
+ * grants one in production, where they are an administrator's to assign.</p>
  *
  * <p>An {@link ApplicationRunner} rather than a change unit because it must be re-runnable: Mongock records a change
  * unit as executed and never runs it again, so a developer who drops a user could not get it back without editing the
@@ -99,7 +100,7 @@ public class DevSeedDataInitializer implements ApplicationRunner {
         Authority adminAuthority = SeedData.saveAuthorityIfMissing(template, AuthoritiesConstants.ADMIN);
         Authority patientAuthority = SeedData.saveAuthorityIfMissing(template, AuthoritiesConstants.PATIENT);
         Authority angelAuthority = SeedData.saveAuthorityIfMissing(template, AuthoritiesConstants.ANGEL);
-        Authority professionalAuthority = SeedData.saveAuthorityIfMissing(template, AuthoritiesConstants.PROFESSIONAL);
+        Authority doctorAuthority = SeedData.saveAuthorityIfMissing(template, AuthoritiesConstants.DOCTOR);
 
         SeedData.saveUserIfMissing(
             template,
@@ -119,7 +120,7 @@ public class DevSeedDataInitializer implements ApplicationRunner {
         // accountLogin and joins to this account on doctor@localhost, so the two seeds have to agree on the login.
         SeedData.saveUserIfMissing(
             template,
-            SeedData.buildUser("user-5", "doctor", "Ama", "Mensah", passwordEncoder, professionalAuthority, userAuthority)
+            SeedData.buildUser("user-5", "doctor", "Ama", "Mensah", passwordEncoder, doctorAuthority, userAuthority)
         );
         LOG.debug("Development seed accounts are present");
 
