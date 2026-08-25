@@ -61,6 +61,17 @@ public class User extends AbstractAuditingEntity<String> implements Serializable
     @Field("image_url")
     private String imageUrl;
 
+    /**
+     * Which surface sent this person to registration, or null when nobody said.
+     *
+     * <p>Set once, at registration, from an allow-listed value — see {@code HandoffSource}. It is deliberately not
+     * editable afterwards: it records where somebody came from, which is a fact about the past and not a property
+     * of the account. An admin screen that could rewrite it would turn the funnel into something anybody could
+     * restate.</p>
+     */
+    @Field("source")
+    private String source;
+
     @Size(max = 20)
     @Field("activation_key")
     @JsonIgnore
@@ -149,6 +160,14 @@ public class User extends AbstractAuditingEntity<String> implements Serializable
 
     public void setImageUrl(String imageUrl) {
         this.imageUrl = imageUrl;
+    }
+
+    public String getSource() {
+        return source;
+    }
+
+    public void setSource(String source) {
+        this.source = source;
     }
 
     public boolean isActivated() {
