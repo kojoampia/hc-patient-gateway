@@ -10,6 +10,51 @@ Status legend: `[x]` done · `[~]` partial / diverges from plan · `[ ]` not sta
 
 ## What changed since the last baseline
 
+### Registrations record where the family came from (2026-08-25)
+
+`web.abofonsa.com` links families to `/account/register?src=web-home` from its landing page, and the dashboard
+now forwards that on the registration payload. It landed nowhere until this: the attribution existed on the
+wire and in no record. See `docs/patient-handoff-contract.md`.
+
+- **`User.source`**, written once at registration and never again. It records a fact about the past, not a
+  property of the account, which is why it is on `ManagedUserVM` and **not** on `AdminUserDTO` — putting it
+  there would let an administrator rewrite where somebody came from through the user-management API.
+- **`HandoffSource` is the allowlist, and the one in the browser is not.** `POST /api/register` is public and
+  unauthenticated, so the parameter is whatever any stranger cares to send, and it lands on a record a human
+  reads and a report counts. The dashboard's copy keeps an ordinary visitor's URL honest; this is the control.
+- **An unrecognised source does not cost somebody an account.** Registration succeeds and the value is simply
+  not recorded — it is not the caller's problem that we do not know their surface.
+- `registerUser` takes it as a parameter rather than reading it off the DTO, so the only way to set it is to
+  have passed it through the allowlist first. A field on the DTO could be forwarded from anywhere by accident.
+
+**The cost, stated because it is silent:** a surface nobody has added to `KNOWN` loses its attribution with no
+error and nothing to notice. The sending contract says that side may add surfaces without telling us, so this
+will happen; the response appended to that document tells them.
+
+### Something now notices when outbound mail breaks (2026-08-25)
+
+Outbound mail was refused by the relay from an unknown date until 2026-08-07, and it was noticed **only
+because somebody looked at `/management/health`**. Spring's health indicators fail quietly: no log line, no
+metric, no alert, every other check green — while account activation and password reset failed for real users
+with no error anybody could see.
+
+- **`MailHealthMetrics`** tests the relay every five minutes and exports `hc_patient_mail_up` alongside
+  `hc_patient_mail_checked_timestamp`. Two gauges rather than one, because a gauge that stops updating
+  otherwise reads as a permanent last value rather than as a check that died.
+- It calls `testConnection()` rather than reading the health indicator — the indicator does the same thing
+  internally, and reaching it through Actuator's registry means depending on the shape of that registry in a
+  _reactive_ application, which differs from the servlet case and has moved between Boot versions.
+- The sender is **optional**. Spring only creates it when `spring.mail.host` is set, and a hard dependency
+  would turn "SMTP is not configured on my laptop" into "the gateway will not start". Absent, nothing is
+  registered — so the metric is missing rather than a confident zero, because an unconfigured relay and a
+  refusing relay are different facts.
+- Failures log at WARN on **every** check, not only on transition. The whole defect was a failure that left no
+  trace.
+
+**What it still does not prove is delivery.** `up=1` means the relay accepted our credentials, which was
+equally true on 2026-08-02 before they rotted. Mail that authenticates and is then dropped downstream reports
+healthy. Alert rules are staged in `hc-patient-ci`; the canary remains the stronger answer.
+
 ### `ROLE_PROFESSIONAL` removed; the eight disciplines issued instead (2026-08-24)
 
 The entry below is now history. `ROLE_PROFESSIONAL` was a blanket clinical authority that **only this
