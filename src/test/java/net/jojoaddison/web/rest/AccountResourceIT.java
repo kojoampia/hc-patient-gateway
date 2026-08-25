@@ -144,6 +144,56 @@ class AccountResourceIT {
     }
 
     @Test
+    void aRegistrationRecordsTheSurfaceThatSentThem() throws Exception {
+        // The point of the whole handoff parameter: the sending site has no analytics by design, so a registration
+        // carrying a source is the first stage of that funnel anybody can count.
+        ManagedUserVM fromLandingPage = new ManagedUserVM();
+        fromLandingPage.setLogin("test-register-src");
+        fromLandingPage.setPassword("password");
+        fromLandingPage.setEmail("test-register-src@example.com");
+        fromLandingPage.setLangKey(Constants.DEFAULT_LANGUAGE);
+        fromLandingPage.setSource("web-home");
+
+        accountWebTestClient
+            .post()
+            .uri("/api/register")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(om.writeValueAsBytes(fromLandingPage))
+            .exchange()
+            .expectStatus()
+            .isCreated();
+
+        assertThat(userRepository.findOneByLogin("test-register-src").blockOptional().orElseThrow().getSource()).isEqualTo("web-home");
+    }
+
+    @Test
+    void aRegistrationDoesNotRecordASurfaceNobodyAgreedTo() throws Exception {
+        // /api/register is public and unauthenticated, so anybody can post whatever they like without ever seeing
+        // the form. The browser's allowlist is a convenience; this is the control, and this test is what says so.
+        ManagedUserVM claimingAnything = new ManagedUserVM();
+        claimingAnything.setLogin("test-register-badsrc");
+        claimingAnything.setPassword("password");
+        claimingAnything.setEmail("test-register-badsrc@example.com");
+        claimingAnything.setLangKey(Constants.DEFAULT_LANGUAGE);
+        claimingAnything.setSource("<script>alert(1)</script>");
+
+        accountWebTestClient
+            .post()
+            .uri("/api/register")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(om.writeValueAsBytes(claimingAnything))
+            .exchange()
+            .expectStatus()
+            // Registration still succeeds. An unrecognised source is not the caller's problem and must not cost
+            // somebody an account -- it is simply not recorded.
+            .isCreated();
+
+        assertThat(userRepository.findOneByLogin("test-register-badsrc").blockOptional().orElseThrow().getSource())
+            .as("an unrecognised source must be dropped, never stored")
+            .isNull();
+    }
+
+    @Test
     void testRegisterValid() throws Exception {
         ManagedUserVM validUser = new ManagedUserVM();
         validUser.setLogin("test-register-valid");

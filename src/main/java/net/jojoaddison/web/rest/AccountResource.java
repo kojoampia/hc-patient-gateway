@@ -7,6 +7,7 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 import net.jojoaddison.repository.UserRepository;
 import net.jojoaddison.security.SecurityUtils;
+import net.jojoaddison.service.HandoffSource;
 import net.jojoaddison.service.MailService;
 import net.jojoaddison.service.TokenRevocationService;
 import net.jojoaddison.service.UserService;
@@ -83,7 +84,7 @@ public class AccountResource {
             throw new InvalidPasswordException();
         }
         return userService
-            .registerUser(managedUserVM, managedUserVM.getPassword())
+            .registerUser(managedUserVM, managedUserVM.getPassword(), HandoffSource.recognised(managedUserVM.getSource()))
             .doOnSuccess(mailService::sendActivationEmail)
             .doOnSuccess(
                 user ->

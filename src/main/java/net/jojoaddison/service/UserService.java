@@ -125,6 +125,15 @@ public class UserService {
     }
 
     public Mono<User> registerUser(AdminUserDTO userDTO, String password) {
+        return registerUser(userDTO, password, null);
+    }
+
+    /**
+     * @param source which surface sent them, already checked against the allowlist by the caller, or null.
+     *     Taken as a parameter rather than read off the DTO so that the only way to set it is to have passed it
+     *     through {@code HandoffSource} — a field on the DTO could be forwarded from anywhere by accident.
+     */
+    public Mono<User> registerUser(AdminUserDTO userDTO, String password, String source) {
         return userRepository
             .findOneByLogin(userDTO.getLogin().toLowerCase())
             .flatMap(existingUser -> {
@@ -157,6 +166,9 @@ public class UserService {
                     }
                     newUser.setImageUrl(userDTO.getImageUrl());
                     newUser.setLangKey(userDTO.getLangKey());
+                    // Where they came from, when an agreed surface said so. Written once here and never again:
+                    // this records a fact about the past, not a property of the account.
+                    newUser.setSource(source);
                     // new user is not active
                     newUser.setActivated(false);
                     // new user gets registration key
