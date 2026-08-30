@@ -109,6 +109,6 @@ Three traps, all of which cost time on the way in:
 - Java stays within the Enforcer range `[17,26)`; the build targets 25, pinned with `maven.compiler.release` so the API surface matches the bytecode level whichever JDK builds it.
 - Don't bypass the JHipster alert-header/exception-translation conventions in `web/rest/errors`.
 - Respect the ArchUnit layer boundaries.
-- `angular.json` is an inert leftover (no client here). The stale `deploy.sh`/`build-deploy.sh` copied from the admin gateway were deleted on 2026-08-11 — deployment lives in `hc-patient/deploy` (`kojoampia/hc-patient-ci`) and nothing in this repo deploys itself.
+- **No client scaffolding remains.** `angular.json`, `webpack/` and `jest.conf.js` were deleted on 2026-08-30 (`skipClient: true`, no `src/main/webapp`, nothing read them — `jest.conf.js` was the sole reader of `webpack/`, and it had no `jest` dependency behind it either). `tsconfig.spec.json` is the last of the set and stays for now: `tsconfig.json` names it in `references`. The stale `deploy.sh`/`build-deploy.sh` copied from the admin gateway were deleted on 2026-08-11 — deployment lives in `hc-patient/deploy` (`kojoampia/hc-patient-ci`) and nothing in this repo deploys itself.
 - No CI workflows exist in `.github/`; the `ci:*` npm scripts are unused entry points.
 - `patient-gw.log` is output from the workspace-level `start-patient.sh` helper.

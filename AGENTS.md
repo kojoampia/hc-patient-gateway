@@ -63,4 +63,4 @@ Statements below are split between **current** (true of the code today) and **ta
 - JUnit 5, Mockito, ArchUnit, BlockHound, Testcontainers (MongoDB + Kafka).
 - Docker Compose for local dependencies; Jib for images.
 - Maven for the build; npm only for dev tooling and script shortcuts.
-- No CI wired up (`.github/` has no workflows); `angular.json` is a stale leftover — see `CLAUDE.md`. This repo carries no deploy script; deployment lives in `hc-patient/deploy`.
+- No CI wired up (`.github/` has no workflows); the generator's client leftovers (`angular.json`, `webpack/`, `jest.conf.js`) were deleted 2026-08-30 — see `CLAUDE.md`. This repo carries no deploy script; deployment lives in `hc-patient/deploy`.
