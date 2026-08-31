@@ -121,7 +121,19 @@ jhipster:
         token-validity-in-seconds: 3600
         token-validity-in-seconds-for-remember-me: 604800
   mail: # specific JHipster mail property, for standard properties see MailProperties
-    base-url: http://my-server-url-to-change # Modify according to your server's URL
+    # Every activation and password-reset link is built from this. It was the generator's literal
+    # placeholder — `http://my-server-url-to-change` — until 2026-08-31, and nothing had noticed
+    # because `hc-patient-ci`'s compose overrides it with JHIPSTER_MAIL_BASE_URL on every deploy.
+    #
+    # So the committed value only mattered if the deploy stopped injecting it, and in that case a
+    # patient would have been mailed a link to a hostname that does not resolve — over http, and
+    # with nothing failing anywhere: the mail sends, the link is simply dead. Spring does not
+    # object to a property having a nonsense value.
+    #
+    # Set to the real host so the un-injected case is correct rather than broken. The deploy still
+    # overrides it, and should: it derives the value from PUBLIC_HOST, which is what makes a second
+    # deployment of this stack possible at all.
+    base-url: https://patient.abofonsa.com
   logging:
     use-json-format: false # By default, logs are not in Json format
     logstash: # Forward logs to logstash over a socket, used by LoggingConfiguration

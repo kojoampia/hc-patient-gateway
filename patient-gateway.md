@@ -250,7 +250,23 @@ before the next JDK bump.
   Still true: `ci:backend:test` and `ci:server:await:patientgateway` are unused entry points, because the workflow calls `./mvnw` directly. `[ ]` Wire them up or delete them.
 
 - `[ ]` Decide the API-docs posture: OpenAPI is only served when the `api-docs` profile is active, and `/v3/api-docs/**` additionally requires `ROLE_ADMIN`.
-- `[ ]` Confirm mail configuration per environment — account activation and password reset silently depend on a working `JavaMailSender` (`application-*.yml` `spring.mail` on port 25).
+- `[x]` **Mail confirmed per environment — 2026-08-31.** Read out of the four config files and `hc-patient-ci`'s compose rather than assumed:
+
+  | Where                            | `spring.mail`                                            | Health indicator                            | Sends?                                                                                               |
+  | -------------------------------- | -------------------------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+  | `application.yml` (all profiles) | —                                                        | **`management.health.mail.enabled: false`** | —                                                                                                    |
+  | `dev`                            | `localhost:25`, no credentials                           | off                                         | No. Nothing listens; sends fail locally and that is intended                                         |
+  | `test`                           | `localhost`                                              | off                                         | No                                                                                                   |
+  | `quality`                        | unset                                                    | explicitly `false` in its compose           | **No, and it does not pretend to**                                                                   |
+  | `prod`                           | `localhost:25` committed, **overridden on every deploy** | `true`, set by the compose                  | Yes — `smtp-relay.gmail.com:587`, STARTTLS + auth, from the estate `~/webroot/01-healthconnect/.env` |
+
+  **Production is correct only because the deploy injects four variables.** `SPRING_MAIL_{HOST,PORT,USERNAME,PASSWORD}` come from `SMTP_MAIL_*` in the estate file; the committed `localhost:25` is never what runs. That is a reasonable arrangement — credentials do not belong in a repository — but it means _this repository cannot be read to find out whether mail works_, which is worth knowing before trusting a config file here.
+
+  Two things found while confirming, and one is now fixed:
+
+  `[x]` **`jhipster.mail.base-url` in `application-prod.yml` was still the generator's placeholder**, `http://my-server-url-to-change`. Every activation and password-reset link is built from it. It never mattered because the compose overrides it with `JHIPSTER_MAIL_BASE_URL`, but the failure mode if injection ever stopped is the quiet kind: the mail sends, and the link is dead. Set to `https://patient.abofonsa.com`, so the un-injected case is correct instead of broken.
+
+  `[~]` **The health indicator is off in the repository and on only in production's compose**, which is the reverse of the usual arrangement and worth stating rather than reversing: `mail: UP` proves Spring connected, negotiated STARTTLS and authenticated — nothing more. It read `UP` on 2026-08-02 while the credential had silently rotted. See `docs/open-issues.md` §2: **no message is known to have ever left this stack**, and that is the item that closes this one properly.
 
 ### Spring Boot 4 upgrade — finished, with leftovers
 
