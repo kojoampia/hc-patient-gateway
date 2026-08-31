@@ -245,7 +245,10 @@ before the next JDK bump.
 
   `[ ]` **One sibling survives: `tsconfig.spec.json`**, the last of this generator's client scaffolding. It is left because `tsconfig.json` names it in `references`, so removing it means editing a file that is not itself a leftover — a smaller decision than it looks, but a different one, and not worth folding into a cleanup silently.
 
-- `[ ]` Wire CI. No workflows exist in `.github/`; `ci:backend:test` and `ci:server:await:patientgateway` are unused entry points. The dashboard repo publishes to GHCR — mirror or justify a different target.
+- `[x]` **CI is wired and has been since 2026-08-05** (`332c69a`) — corrected 2026-08-31. `build.yml` runs `./mvnw verify` and a dependency scan on every push and pull request; `release.yml` publishes to GHCR on push to main, mirroring the dashboard, which is what this entry asked for. `.github/` has not been empty for four weeks.
+
+  Still true: `ci:backend:test` and `ci:server:await:patientgateway` are unused entry points, because the workflow calls `./mvnw` directly. `[ ]` Wire them up or delete them.
+
 - `[ ]` Decide the API-docs posture: OpenAPI is only served when the `api-docs` profile is active, and `/v3/api-docs/**` additionally requires `ROLE_ADMIN`.
 - `[ ]` Confirm mail configuration per environment — account activation and password reset silently depend on a working `JavaMailSender` (`application-*.yml` `spring.mail` on port 25).
 
