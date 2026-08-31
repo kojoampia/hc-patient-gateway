@@ -2,6 +2,7 @@ package net.jojoaddison.config.dbmigrations;
 
 import java.time.Instant;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Set;
 import net.jojoaddison.config.Constants;
 import net.jojoaddison.domain.Authority;
@@ -36,7 +37,27 @@ import org.springframework.stereotype.Component;
  * </pre>
  *
  * <p>Optional overrides: {@code gateway.admin.login} (default {@code admin}) and {@code gateway.admin.email}
- * (default {@code admin@localhost}). The password is never logged.</p>
+ * (no default — see below). The password is never logged.</p>
+ *
+ * <h2>The email is reconciled on every start; the password is not — 2026-08-31</h2>
+ *
+ * <p>Until this changed, everything here ran only when the account was absent, so
+ * {@code gateway.admin.email} was write-once: set it after the first boot and nothing happened, ever. Production
+ * ran for months on {@code admin@localhost} for exactly that reason — <b>an address that can never be delivered
+ * to, which means the one privileged account on the system had no mail-based recovery path at all.</b> If
+ * {@code GATEWAY_ADMIN_PASSWORD} were lost, a password reset could not help, because the link had nowhere to go.
+ * Correcting it needed an out-of-band {@code PUT /api/admin/users}, and a fix nobody can perform from
+ * configuration is a fix that does not happen.</p>
+ *
+ * <p><b>The password deliberately still is not reconciled.</b> An operator who has rotated the administrator's
+ * password does not want the next restart to put the old one back — that would turn a routine deploy into a
+ * silent credential rollback. The email carries no such risk: it is an address, not a secret, and the failure it
+ * prevents is being locked out.</p>
+ *
+ * <p><b>The default is now empty rather than {@code admin@localhost}, and that is what makes reconciliation
+ * safe.</b> With a non-empty default, a gateway started without the variable set would "reconcile" a correct
+ * address back to {@code admin@localhost} — the change would actively undo the thing it exists to fix, and would
+ * do it on every restart. Unset means "leave it alone"; set means "make it so".</p>
  */
 @Component
 public class AdminBootstrapInitializer implements ApplicationRunner {
@@ -53,7 +74,7 @@ public class AdminBootstrapInitializer implements ApplicationRunner {
         MongoTemplate template,
         PasswordEncoder passwordEncoder,
         @Value("${gateway.admin.login:admin}") String login,
-        @Value("${gateway.admin.email:admin@localhost}") String email,
+        @Value("${gateway.admin.email:}") String email,
         @Value("${gateway.admin.password:}") String password
     ) {
         this.template = template;
@@ -63,9 +84,19 @@ public class AdminBootstrapInitializer implements ApplicationRunner {
         this.password = password;
     }
 
+    /** Empty unless explicitly configured — see the class javadoc on why an empty default is what makes this safe. */
+    private String configuredEmail() {
+        return email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
+    }
+
     @Override
     public void run(ApplicationArguments args) {
-        boolean adminExists = template.exists(Query.query(Criteria.where("login").is(login)), User.class);
+        User existing = template.findOne(Query.query(Criteria.where("login").is(login)), User.class);
+        boolean adminExists = existing != null;
+
+        if (adminExists) {
+            reconcileEmail(existing);
+        }
 
         if (password == null || password.isBlank()) {
             if (!adminExists) {
@@ -90,7 +121,9 @@ public class AdminBootstrapInitializer implements ApplicationRunner {
         admin.setPassword(passwordEncoder.encode(password));
         admin.setFirstName("Administrator");
         admin.setLastName("Account");
-        admin.setEmail(email);
+        // Falls back to the historical default only at CREATION. Reconciliation treats empty as "leave alone",
+        // so the two paths read the empty string differently on purpose.
+        admin.setEmail(configuredEmail().isEmpty() ? "admin@localhost" : configuredEmail());
         admin.setActivated(true);
         admin.setLangKey(Constants.DEFAULT_LANGUAGE);
         admin.setCreatedBy(Constants.SYSTEM);
@@ -104,5 +137,60 @@ public class AdminBootstrapInitializer implements ApplicationRunner {
         template.save(admin);
         // Never log the password.
         LOG.info("Bootstrapped administrator '{}' from gateway.admin.password", login);
+    }
+
+    /**
+     * Brings an existing administrator's email in line with {@code gateway.admin.email}.
+     *
+     * <p>Three things it deliberately will not do.</p>
+     *
+     * <p><b>Nothing when the property is unset.</b> Empty means "leave it alone", never "reset it to the
+     * default" — otherwise a gateway started without the variable would undo a correction on every restart.</p>
+     *
+     * <p><b>Nothing when another account already holds the address.</b> {@code User.email} is unique, so saving
+     * would throw; and the right answer is not to steal the address from whoever has it. It warns instead,
+     * because a silent no-op here looks exactly like success.</p>
+     *
+     * <p><b>Never fail startup.</b> This runs in an {@link ApplicationRunner}: an exception escaping it would
+     * take the gateway down, and a wrong administrator email is not worth trading a running gateway for. The
+     * failure is logged at WARN and the gateway comes up with the old address — bad, and better than refusing
+     * to serve anybody.</p>
+     */
+    private void reconcileEmail(User admin) {
+        String wanted = configuredEmail();
+        if (wanted.isEmpty()) {
+            return;
+        }
+
+        String current = admin.getEmail() == null ? "" : admin.getEmail().trim().toLowerCase(Locale.ROOT);
+        if (wanted.equals(current)) {
+            return;
+        }
+
+        try {
+            boolean takenByAnother = template.exists(Query.query(Criteria.where("email").is(wanted).and("login").ne(login)), User.class);
+            if (takenByAnother) {
+                LOG.warn(
+                    "Not changing administrator '{}' to {} — another account already uses that address. " +
+                    "The administrator still has {}.",
+                    login,
+                    wanted,
+                    current.isEmpty() ? "no address" : current
+                );
+                return;
+            }
+
+            admin.setEmail(wanted);
+            template.save(admin);
+            LOG.info("Reconciled administrator '{}' email from {} to {}", login, current.isEmpty() ? "(unset)" : current, wanted);
+        } catch (RuntimeException e) {
+            LOG.warn(
+                "Could not reconcile administrator '{}' email to {} — it is still {}. The gateway is running.",
+                login,
+                wanted,
+                current.isEmpty() ? "(unset)" : current,
+                e
+            );
+        }
     }
 }
