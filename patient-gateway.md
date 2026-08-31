@@ -319,15 +319,13 @@ Deploying the stack for the first time (see `hc-patient/deploy`) surfaced two mo
 
 Still open:
 
-- `[ ]` **Upgrade to Testcontainers 2.x** — still open, and scoped 2026-08-31 so the next attempt starts from the real shape rather than the pom's summary of it. The build pins 1.21.4 ahead of Spring Boot 4's BOM (2.0.5).
+- `[x]` **Upgraded to Testcontainers 2.0.5 — 2026-08-31, in both repos together.** The pin existed because 2.x "re-cooks the API"; it turned out to re-cook less than the comment feared.
 
-  **The code change is small: three files here and three in `hc-patient-service`**, four imports between them — `containers.KafkaContainer`, `containers.MongoDBContainer`, `containers.output.Slf4jLogConsumer`, `utility.DockerImageName` — plus the pom's artifact renames (`junit-jupiter` → `testcontainers-junit-jupiter`).
+  **Not one import changed.** 2.0.5 still exposes `org.testcontainers.containers.KafkaContainer`, `MongoDBContainer`, `Slf4jLogConsumer` and `DockerImageName` at their old packages, so all three test-support classes compiled untouched. The whole change is three artifact renames — `junit-jupiter` → `testcontainers-junit-jupiter`, `mongodb` → `testcontainers-mongodb`, `kafka` → `testcontainers-kafka` — plus the version.
 
-  **What the pom's comment does not say is the part that makes it more than an import sweep.** 2.x's `org.testcontainers.kafka.KafkaContainer` is built for the `apache/kafka` image; these tests run `confluentinc/cp-kafka` (7.6.0 here, 7.5.2 in the api). So the upgrade is also an image change, and an image change under a broker is a behavioural change rather than a rename — it wants a full `verify` in both repos to believe, and those are Testcontainers runs measured in tens of minutes, not seconds.
+  **The thing this was deferred over does not apply.** The worry was that 2.x's `org.testcontainers.kafka.KafkaContainer` targets the `apache/kafka` image while these tests run `confluentinc/cp-kafka`, making it an image change under a broker rather than a rename. That is true of the _new_ class; nothing forces you to it, and the old one still works with the confluent image. Deferring was still the right call at the time — the cost of being wrong the other way was a broken broker under 149 tests — but the scoping was pessimistic and it is worth recording which way it erred.
 
-  Two constraints on doing it: **both repos move together** — the pin's stated reason is that 1.21.4 "matches hc-patient-service", and a divergence there is worse than being a version behind — and there is no functional gain, so it belongs in a session with time to run both suites rather than at the end of one.
-
-  Worth noting the alignment that argues for eventually doing it: the _quality_ stack already runs `apache/kafka:3.9.0`, so the tests and the deployed broker currently disagree about which Kafka they exercise.
+  Verified the only way that counts, a full `verify` in each repo rather than a compile: **gateway 149 tests, api 623, both 0 failures.** Artifact availability was checked first with `dependency:get` against Maven Central, which is how the three renames were found without guessing.
 
 - `[x]` **The Modernizer exclusion is right, and stays — reviewed 2026-08-31.** The rule suggests `String.equalsFoldCase`, and full Unicode case folding is **not** equivalent to `equalsIgnoreCase`: it also matches `"Fuß"` against `"FUSS"`. These call sites compare logins and email addresses, where two distinct identities collapsing into one is an authentication defect rather than a style question.
 
