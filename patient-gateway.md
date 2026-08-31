@@ -249,7 +249,12 @@ before the next JDK bump.
 
   Still true: `ci:backend:test` and `ci:server:await:patientgateway` are unused entry points, because the workflow calls `./mvnw` directly. `[ ]` Wire them up or delete them.
 
-- `[ ]` Decide the API-docs posture: OpenAPI is only served when the `api-docs` profile is active, and `/v3/api-docs/**` additionally requires `ROLE_ADMIN`.
+- `[x]` **`api-docs` posture decided: both gates stay — 2026-08-31.** Settled together with `hc-patient-service`, whose `patient-api.md` carries the full reasoning; a decision made in one repo and not the other is how the two come apart.
+
+  In short: `springdoc.api-docs.enabled: false` under the `!api-docs` profile decides whether the schema _exists_, and the `ROLE_ADMIN` rule on `/v3/api-docs/**` decides who may read it when it does. Not redundant — turning the profile on publishes nothing to the world, which is what makes the opt-in cheap rather than a lock people route around.
+
+  This repo has one gate the service does not: `/services/*/v3/api-docs` is separately `ROLE_ADMIN`, so the gateway does not become a way to read a downstream schema that the downstream service is itself protecting.
+
 - `[x]` **Mail confirmed per environment — 2026-08-31.** Read out of the four config files and `hc-patient-ci`'s compose rather than assumed:
 
   | Where                            | `spring.mail`                                            | Health indicator                            | Sends?                                                                                               |
