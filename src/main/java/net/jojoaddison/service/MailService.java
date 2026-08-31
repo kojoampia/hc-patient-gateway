@@ -4,6 +4,7 @@ import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.util.Map;
 import net.jojoaddison.domain.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -120,7 +121,26 @@ public class MailService {
             .subscribe(null, e -> log.warn("Email to '{}' failed unexpectedly", user.getEmail(), e));
     }
 
+    /**
+     * As {@link #sendEmailFromTemplate}, with extra variables for the template.
+     *
+     * <p>Added for the deletion mails, which have to state a date. Everything else in this class renders from the
+     * {@code User} and the base URL alone.</p>
+     */
+    public void sendEmailFromTemplate(User user, String templateName, String titleKey, Map<String, Object> variables) {
+        Mono.defer(() -> {
+            this.sendEmailFromTemplateSync(user, templateName, titleKey, variables);
+            return Mono.empty();
+        })
+            .subscribeOn(Schedulers.boundedElastic())
+            .subscribe(null, e -> log.warn("Email to '{}' failed unexpectedly", user.getEmail(), e));
+    }
+
     private void sendEmailFromTemplateSync(User user, String templateName, String titleKey) {
+        sendEmailFromTemplateSync(user, templateName, titleKey, Map.of());
+    }
+
+    private void sendEmailFromTemplateSync(User user, String templateName, String titleKey, Map<String, Object> variables) {
         if (user.getEmail() == null) {
             log.debug("Email doesn't exist for user '{}'", user.getLogin());
             return;
@@ -129,6 +149,7 @@ public class MailService {
         Context context = new Context(locale);
         context.setVariable(USER, user);
         context.setVariable(BASE_URL, jHipsterProperties.getMail().getBaseUrl());
+        variables.forEach(context::setVariable);
         String content = templateEngine.process(templateName, context);
         String subject = messageSource.getMessage(titleKey, null, locale);
         this.sendEmailSync(user.getEmail(), subject, content, false, true);
@@ -182,5 +203,45 @@ public class MailService {
     public void sendCareAngelAccessEndedMail(User user) {
         log.debug("Sending care angel access-ended email to '{}'", user.getEmail());
         this.sendEmailFromTemplate(user, "mail/careAngelAccessEndedEmail", "email.delegation.revoked.title");
+    }
+
+    /**
+     * Confirms that a deletion request was received, and says when it will be carried out.
+     *
+     * <p>The one mail in this set that carries a value from the event: {@code dueAt}, so the patient has the date in
+     * writing rather than only on a screen they have to sign in to see.</p>
+     */
+    public void sendDeletionRequestedMail(User user, String dueDate) {
+        log.debug("Sending deletion-requested email to '{}'", user.getEmail());
+        this.sendEmailFromTemplate(user, "mail/deletionRequestedEmail", "email.deletion.requested.title", Map.of("dueDate", dueDate));
+    }
+
+    /** Confirms a withdrawal, so somebody who changed their mind knows the clock stopped. */
+    public void sendDeletionWithdrawnMail(User user) {
+        log.debug("Sending deletion-withdrawn email to '{}'", user.getEmail());
+        this.sendEmailFromTemplate(user, "mail/deletionWithdrawnEmail", "email.deletion.withdrawn.title");
+    }
+
+    /**
+     * Tells somebody their record has been erased.
+     *
+     * <p><b>The last message this address will receive from the product</b>, and the only proof the patient gets that
+     * what they asked for was done — by this point the portal can no longer show them anything, because there is no
+     * record left to show. It deliberately does not link back into the app.</p>
+     */
+    public void sendDeletionCompletedMail(User user) {
+        log.debug("Sending deletion-completed email to '{}'", user.getEmail());
+        this.sendEmailFromTemplate(user, "mail/deletionCompletedEmail", "email.deletion.completed.title");
+    }
+
+    /**
+     * Tells somebody their request was refused, and where to read why.
+     *
+     * <p>The reason itself is not in the mail. An administrator's free text is unbounded and this address is outside
+     * the product; the patient reads it on their own request in the portal, which is authenticated.</p>
+     */
+    public void sendDeletionRefusedMail(User user) {
+        log.debug("Sending deletion-refused email to '{}'", user.getEmail());
+        this.sendEmailFromTemplate(user, "mail/deletionRefusedEmail", "email.deletion.refused.title");
     }
 }

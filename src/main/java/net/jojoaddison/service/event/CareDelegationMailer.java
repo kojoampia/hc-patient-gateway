@@ -10,7 +10,6 @@ import net.jojoaddison.repository.UserRepository;
 import net.jojoaddison.service.MailService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.annotation.Bean;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -65,20 +64,14 @@ public class CareDelegationMailer {
     }
 
     /**
-     * Bound to {@code patientEventsConsumer-in-0}.
+     * Called by {@link PatientEventMailRouter}, which owns the binding.
      *
-     * <p>The method name <em>is</em> the binding name — Spring Cloud Stream derives {@code patientEventsConsumer-in-0}
-     * from it — so renaming this method silently unbinds the consumer and the mails simply stop.</p>
-     *
-     * <p>Which is also why this class is not called {@code PatientEventsConsumer}: Spring would derive that same name
-     * for the component itself, and a {@code @Bean} method sharing its own class's bean name is a factory-bean
-     * reference pointing at itself. The context refuses to start at all.</p>
+     * <p>This method used to be the {@code @Bean} bound to {@code patientEventsConsumer-in-0}. It moved on
+     * 2026-08-31, when deletion requests became a second family of mail on the same topic and one of the two mailers
+     * would otherwise have had to own the consumer for both. The bean name derives from the <em>method</em> name and
+     * that name went with it, so the binding is unchanged — which is the only thing that mattered, because
+     * unbinding it stops every mail in the product with nothing failing anywhere.</p>
      */
-    @Bean
-    public Consumer<PatientEvent> patientEventsConsumer() {
-        return this::handle;
-    }
-
     void handle(PatientEvent event) {
         if (event == null || !PatientEventType.CARE_DELEGATION_CHANGED.equals(event.type())) {
             // Every other type on this topic belongs to somebody else. Ignoring the unknown is what lets a new event

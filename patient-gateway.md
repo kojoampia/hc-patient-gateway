@@ -237,11 +237,63 @@ before the next JDK bump.
 
   Prompted by `deploy.sh` finally being run by mistake, from this directory instead of `hc-patient/deploy`. It failed to find an `admingateway` image, pushed nothing, printed **`build and deploy completed.`** and exited 0 — a false success that read as a completed production deploy. That is the argument against leaving a wrong script in place with a warning in the docs: the warning is only read by someone who already suspects a problem.
 
-- `[ ]` Delete the leftover `angular.json` — `skipClient: true`, there is no `src/main/webapp`, and it builds nothing.
-- `[ ]` Delete the leftover `webpack/` directory (`environment.js`, `proxy.conf.js`, `webpack.custom.js`, `logo-jhipster.png`) for the same reason — it is tracked, and nothing in a `skipClient` app reads it. Worth noting before deleting: its `proxy.conf.js` already targeted **5505**, which is corroboration that 5505 was the gateway's intended port all along and 5503 was the drift.
-- `[ ]` Wire CI. No workflows exist in `.github/`; `ci:backend:test` and `ci:server:await:patientgateway` are unused entry points. The dashboard repo publishes to GHCR — mirror or justify a different target.
-- `[ ]` Decide the API-docs posture: OpenAPI is only served when the `api-docs` profile is active, and `/v3/api-docs/**` additionally requires `ROLE_ADMIN`.
-- `[ ]` Confirm mail configuration per environment — account activation and password reset silently depend on a working `JavaMailSender` (`application-*.yml` `spring.mail` on port 25).
+- `[x]` **Deleted the leftover `angular.json` and `webpack/` — 2026-08-30.** `skipClient: true`, there is no `src/main/webapp`, and neither built anything. Five files: `angular.json`, `webpack/environment.js`, `webpack/proxy.conf.js`, `webpack/webpack.custom.js`, `webpack/logo-jhipster.png`. Checked before deleting that nothing reads them — `package.json` has no `ng` or webpack script, `pom.xml` names neither, and the only reference to `webpack/` anywhere was `angular.json`'s own pointer at `webpack.custom.js`, so the two went together or not at all.
+
+  **The one thing worth keeping out of `webpack/proxy.conf.js` is already written down**, which is what made deleting it safe: it targeted **5505**, corroborating that 5505 was the gateway's intended port all along and 5503 was the drift. That is recorded at line 117 of this file and in `CLAUDE.md`, so the evidence outlives the file that carried it. A leftover is only safe to delete once the thing it accidentally proved has been written somewhere that is not a leftover.
+
+  **`jest.conf.js` went with them, and finding it is the reason to grep rather than trust "inert".** It did `require('./webpack/environment')` at line 6 — the one live reader of a directory four documents describe as read by nothing. It is dead by every other measure: there is no `jest` dependency in `package.json`, no `test` script, and its `testMatch` points at `src/main/webapp/app/**`, which does not exist in a `skipClient` app. So the require was dangling in effect long before this deletion made it dangling in fact, and nothing would have failed either way — but only because the file it broke was itself never run. `.eslintignore` lost its now-pointless `webpack/` line at the same time.
+
+  `[ ]` **One sibling survives: `tsconfig.spec.json`**, the last of this generator's client scaffolding. It is left because `tsconfig.json` names it in `references`, so removing it means editing a file that is not itself a leftover — a smaller decision than it looks, but a different one, and not worth folding into a cleanup silently.
+
+- `[x]` **CI is wired and has been since 2026-08-05** (`332c69a`) — corrected 2026-08-31. `build.yml` runs `./mvnw verify` and a dependency scan on every push and pull request; `release.yml` publishes to GHCR on push to main, mirroring the dashboard, which is what this entry asked for. `.github/` has not been empty for four weeks.
+
+  Still true: `ci:backend:test` and `ci:server:await:patientgateway` are unused entry points, because the workflow calls `./mvnw` directly. `[ ]` Wire them up or delete them.
+
+- `[x]` **`api-docs` posture decided: both gates stay — 2026-08-31.** Settled together with `hc-patient-service`, whose `patient-api.md` carries the full reasoning; a decision made in one repo and not the other is how the two come apart.
+
+  In short: `springdoc.api-docs.enabled: false` under the `!api-docs` profile decides whether the schema _exists_, and the `ROLE_ADMIN` rule on `/v3/api-docs/**` decides who may read it when it does. Not redundant — turning the profile on publishes nothing to the world, which is what makes the opt-in cheap rather than a lock people route around.
+
+  This repo has one gate the service does not: `/services/*/v3/api-docs` is separately `ROLE_ADMIN`, so the gateway does not become a way to read a downstream schema that the downstream service is itself protecting.
+
+- `[x]` **Mail confirmed per environment — 2026-08-31.** Read out of the four config files and `hc-patient-ci`'s compose rather than assumed:
+
+  | Where                            | `spring.mail`                                            | Health indicator                            | Sends?                                                                                               |
+  | -------------------------------- | -------------------------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+  | `application.yml` (all profiles) | —                                                        | **`management.health.mail.enabled: false`** | —                                                                                                    |
+  | `dev`                            | `localhost:25`, no credentials                           | off                                         | No. Nothing listens; sends fail locally and that is intended                                         |
+  | `test`                           | `localhost`                                              | off                                         | No                                                                                                   |
+  | `quality`                        | unset                                                    | explicitly `false` in its compose           | **No, and it does not pretend to**                                                                   |
+  | `prod`                           | `localhost:25` committed, **overridden on every deploy** | `true`, set by the compose                  | Yes — `smtp-relay.gmail.com:587`, STARTTLS + auth, from the estate `~/webroot/01-healthconnect/.env` |
+
+  **Production is correct only because the deploy injects four variables.** `SPRING_MAIL_{HOST,PORT,USERNAME,PASSWORD}` come from `SMTP_MAIL_*` in the estate file; the committed `localhost:25` is never what runs. That is a reasonable arrangement — credentials do not belong in a repository — but it means _this repository cannot be read to find out whether mail works_, which is worth knowing before trusting a config file here.
+
+  Two things found while confirming, and one is now fixed:
+
+  `[x]` **`jhipster.mail.base-url` in `application-prod.yml` was still the generator's placeholder**, `http://my-server-url-to-change`. Every activation and password-reset link is built from it. It never mattered because the compose overrides it with `JHIPSTER_MAIL_BASE_URL`, but the failure mode if injection ever stopped is the quiet kind: the mail sends, and the link is dead. Set to `https://patient.abofonsa.com`, so the un-injected case is correct instead of broken.
+
+  `[~]` **The health indicator is off in the repository and on only in production's compose**, which is the reverse of the usual arrangement and worth stating rather than reversing: `mail: UP` proves Spring connected, negotiated STARTTLS and authenticated — nothing more. It read `UP` on 2026-08-02 while the credential had silently rotted. See `docs/open-issues.md` §2: **no message is known to have ever left this stack**, and that is the item that closes this one properly.
+
+### Deletion mails, and the one consumer that carries them (2026-08-31)
+
+- `[x]` **A patient is told when their deletion request moves.** Until now they were told nothing — they raised the one irreversible request in the product and learnt the outcome by signing back in, if they thought to. After a completed erasure they could not even do that, because there is no record left to show them: **the mail is the only proof they get.**
+
+  `DeletionRequestMailer` consumes `DeletionRequestChanged` off `patient-events` and sends on all four transitions: requested (with the date in writing), withdrawn, completed, refused. `MailService` gained the four methods, four Thymeleaf templates, and fifteen message keys across all four bundles.
+
+  The refusal mail does **not** carry the administrator's reason. That text is unbounded and this address is outside the product; the patient reads it in the portal, authenticated. The completed mail deliberately links nowhere into the app — by then there is nothing to show, and sending somebody to an empty screen is a worse answer than none.
+
+- `[x]` **The `patientEventsConsumer` binding moved to `PatientEventMailRouter`.** There can be exactly one function on it — `spring.cloud.function.definition` names it and `patientEventsConsumer-in-0` points it at the topic — so a second family of mail could not bring a second consumer. The router is that seam: adding a third is a line there rather than reopening whichever mailer owned the binding first.
+
+  **The bean name comes from the method, never the class**, so the move is invisible to the binding. That was safe by construction and is now safe by test.
+
+- `[x]` **An erased record's login is closed — decided and built 2026-08-31.** `DeletionAccountCloser` consumes the same `COMPLETED` event and **deactivates** the `User`. Until now a completed erasure left somebody able to sign in, resolving to no patient and seeing an empty portal: correct behaviour, and not the same thing as being gone.
+
+  **Deactivated rather than deleted, and the cost is stated rather than glossed.** Deleting is what the patient literally asked for and would remove their email address too. Deactivating keeps the audit trail whole — the retained `DeletionRequest` names a login, and a login resolving to nothing is a weaker record of what was done than one resolving to a closed account. The price is that **this retains an email**, the one piece of personal data erased everywhere else in the flow. `DeletionAccountCloserUnitTest` pins the choice as a choice so that changing it is a decision rather than an edit — and note it changes two published documents with it: the privacy policy and the Play data-safety declaration both describe what erasure removes.
+
+  Only `COMPLETED` closes anything. Closing on a withdrawal would lock somebody out of a record they had just decided to keep, which is tested.
+
+  One thing the decision quietly bought: **ordering stopped mattering.** A delete would have had to run strictly after the mailer, since the mail resolves its recipient by looking the account up — close it first and there is nobody left to tell. A deactivated row is still there to find. The router still calls mail first, and says why in a comment, because it would matter again the day somebody revisits this.
+
+- `[x]` **`PatientEventConsumerBindingIT`** — new, and the point is the failure it catches. Rename the bound method, or move it without keeping its name, and Spring Cloud Stream has no function to bind: the context starts, the gateway serves every request as before, and **every mail in the product stops with nothing failing anywhere.** The producer side has had this cover since it was written; the consumer side had none. Four assertions — the bean exists under the name the YAML expects, it is bound to `patient-events`, it has a consumer group (without one each replica is a duplicate notifier), and both mailers are reachable from it. 4 tests, 802s.
 
 ### Spring Boot 4 upgrade — finished, with leftovers
 
@@ -267,8 +319,17 @@ Deploying the stack for the first time (see `hc-patient/deploy`) surfaced two mo
 
 Still open:
 
-- `[ ]` Upgrade to Testcontainers 2.x. The build pins 1.21.4 ahead of Spring Boot 4's BOM (2.0.5) because 2.x re-coordinated every module (`junit-jupiter` → `testcontainers-junit-jupiter`) and moved the container classes (`org.testcontainers.containers.KafkaContainer` → `org.testcontainers.kafka.KafkaContainer`).
-- `[ ]` Revisit the Modernizer exclusion for `String.equalsIgnoreCase`. Modernizer was bumped 2.7.0 → 3.5.0 (2.7.0 cannot read Java 26 bytecode and silently failed the build), and it now suggests `String.equalsFoldCase`. That is not an equivalent swap for login/email comparison, so the rule is excluded in `pom.xml`.
+- `[x]` **Upgraded to Testcontainers 2.0.5 — 2026-08-31, in both repos together.** The pin existed because 2.x "re-cooks the API"; it turned out to re-cook less than the comment feared.
+
+  **Not one import changed.** 2.0.5 still exposes `org.testcontainers.containers.KafkaContainer`, `MongoDBContainer`, `Slf4jLogConsumer` and `DockerImageName` at their old packages, so all three test-support classes compiled untouched. The whole change is three artifact renames — `junit-jupiter` → `testcontainers-junit-jupiter`, `mongodb` → `testcontainers-mongodb`, `kafka` → `testcontainers-kafka` — plus the version.
+
+  **The thing this was deferred over does not apply.** The worry was that 2.x's `org.testcontainers.kafka.KafkaContainer` targets the `apache/kafka` image while these tests run `confluentinc/cp-kafka`, making it an image change under a broker rather than a rename. That is true of the _new_ class; nothing forces you to it, and the old one still works with the confluent image. Deferring was still the right call at the time — the cost of being wrong the other way was a broken broker under 149 tests — but the scoping was pessimistic and it is worth recording which way it erred.
+
+  Verified the only way that counts, a full `verify` in each repo rather than a compile: **gateway 149 tests, api 623, both 0 failures.** Artifact availability was checked first with `dependency:get` against Maven Central, which is how the three renames were found without guessing.
+
+- `[x]` **The Modernizer exclusion is right, and stays — reviewed 2026-08-31.** The rule suggests `String.equalsFoldCase`, and full Unicode case folding is **not** equivalent to `equalsIgnoreCase`: it also matches `"Fuß"` against `"FUSS"`. These call sites compare logins and email addresses, where two distinct identities collapsing into one is an authentication defect rather than a style question.
+
+  The exclusion already carried that reasoning in `pom.xml`; what was missing was a decision, so this is it. Note the shape of the finding — **a linter recommending a subtly different method is the kind of suggestion that is right in general and wrong here**, and the exclusion is worth more than the one-line fix it prevents.
 
 ## Phase B — auth/onboarding features
 

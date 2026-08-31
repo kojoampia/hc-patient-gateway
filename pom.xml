@@ -37,7 +37,7 @@
         <spring-boot.version>4.0.6</spring-boot.version>
         <spring-cloud.version>2025.1.1</spring-cloud.version>
         <dropwizard-metrics.version>4.2.39</dropwizard-metrics.version>
-        <testcontainers.version>1.21.4</testcontainers.version>
+        <testcontainers.version>2.0.5</testcontainers.version>
         <springdoc.version>3.0.3</springdoc.version>
         <feign-reactor-bom.version>4.2.1</feign-reactor-bom.version>
         <logstash-logback-encoder.version>9.0</logstash-logback-encoder.version>
@@ -81,10 +81,14 @@
             <!--
                 Must be imported before spring-boot-dependencies to win: Spring Boot 4's BOM
                 pulls in Testcontainers 2.x, which re-coordinated every module
-                (junit-jupiter -> testcontainers-junit-jupiter) and moved the container classes
-                (org.testcontainers.containers.KafkaContainer -> org.testcontainers.kafka.KafkaContainer).
-                Staying on 1.21.4 keeps src/test compiling and matches hc-patient-service.
-                Upgrading to Testcontainers 2.x is tracked in patient-gateway.md.
+                (junit-jupiter -> testcontainers-junit-jupiter, mongodb -> testcontainers-mongodb,
+                kafka -> testcontainers-kafka). Done on 2026-08-31, in both repos together.
+
+                The feared part did not happen. 2.x still exposes org.testcontainers.containers.KafkaContainer
+                and MongoDBContainer at their old packages, so not one import changed and the confluent
+                image kept working. The concern that 2.x's kafka.KafkaContainer targets apache/kafka, and
+                would therefore force an image swap under the broker, turned out not to apply. Artifact
+                names were the whole of it.
             -->
             <dependency>
                 <groupId>org.testcontainers</groupId>
@@ -385,17 +389,17 @@
         </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
-            <artifactId>junit-jupiter</artifactId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
-            <artifactId>kafka</artifactId>
+            <artifactId>testcontainers-kafka</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
-            <artifactId>mongodb</artifactId>
+            <artifactId>testcontainers-mongodb</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

@@ -31,7 +31,7 @@ There is no full JHipster BOM here — only the `jhipster-framework` library —
 - **Kafka publish/consume endpoints** via `/api/patient-gateway-kafka`
 - **Mongo bootstrap data** created by Mongock on startup
 
-There is **no generated frontend app** in this repository (`skipClient: true`, no `src/main/webapp`). The main resources under `src/main/resources` are configuration, i18n bundles, and mail templates. The leftover `angular.json` at the repo root is inert. The patient UI lives in the separate `hc-patient-dashboard` repo and reaches this gateway over HTTP.
+There is **no generated frontend app** in this repository (`skipClient: true`, no `src/main/webapp`). The main resources under `src/main/resources` are configuration, i18n bundles, and mail templates. The client scaffolding the generator left at the repo root — `angular.json`, `webpack/`, `jest.conf.js` — was deleted on 2026-08-30. The patient UI lives in the separate `hc-patient-dashboard` repo and reaches this gateway over HTTP.
 
 ## Runtime defaults
 
@@ -301,7 +301,7 @@ The repository also contains Docker definitions for:
 ## Repository caveats
 
 - This repo has **no deploy script**. `deploy.sh` and `build-deploy.sh` — copies from the admin gateway that tagged and pushed `admingateway` and expected a `br-admin-gateway` directory — were deleted on 2026-08-11 after one of them was run by mistake and reported `build and deploy completed` while shipping nothing. Deployment lives in `hc-patient/deploy` (`kojoampia/hc-patient-ci`); run `./deploy.sh` from **there**.
-- `angular.json` is a leftover from before `skipClient` and builds nothing.
+- `angular.json`, `webpack/` and `jest.conf.js` were leftovers from before `skipClient` and built nothing. Deleted 2026-08-30; `tsconfig.spec.json` remains only because `tsconfig.json` references it.
 - `patient-gw.log` is output from the workspace-level `start-patient.sh` helper.
 - No CI workflows exist in `.github/`; the `ci:*` npm scripts are unused entry points.
 

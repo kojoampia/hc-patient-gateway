@@ -63,4 +63,4 @@ Statements below are split between **current** (true of the code today) and **ta
 - JUnit 5, Mockito, ArchUnit, BlockHound, Testcontainers (MongoDB + Kafka).
 - Docker Compose for local dependencies; Jib for images.
 - Maven for the build; npm only for dev tooling and script shortcuts.
-- No CI wired up (`.github/` has no workflows); `angular.json` is a stale leftover — see `CLAUDE.md`. This repo carries no deploy script; deployment lives in `hc-patient/deploy`.
+- CI runs `./mvnw verify` and a dependency scan on every push and pull request (`.github/workflows/build.yml`, since 2026-08-05; this line claimed otherwise until 2026-08-31). The generator's client leftovers (`angular.json`, `webpack/`, `jest.conf.js`) were deleted 2026-08-30 — see `CLAUDE.md`. This repo carries no deploy script; deployment lives in `hc-patient/deploy`.
