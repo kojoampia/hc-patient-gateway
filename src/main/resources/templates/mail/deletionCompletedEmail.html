@@ -1,0 +1,24 @@
+<!doctype html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${#locale.language}" lang="en">
+  <head>
+    <title th:text="#{email.deletion.completed.title}">Your record has been deleted</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <link rel="icon" th:href="@{|${baseUrl}/favicon.ico|}" />
+  </head>
+  <body>
+    <p th:text="#{email.deletion.completed.greeting(${user.login})}">Dear</p>
+    <!-- Deliberately links nowhere into the product. By the time this arrives the portal has nothing left to show
+         this person, and sending them to an empty screen would be a worse answer than none. This mail IS the
+         confirmation. -->
+    <p th:text="#{email.deletion.completed.text1}">
+      Your health record and everything in it has been deleted, as you asked. We have kept only a record that the deletion was requested and
+      carried out; it holds no clinical information about you.
+    </p>
+    <p th:text="#{email.deletion.completed.text2}">This is the last message you will receive about your record.</p>
+    <p>
+      <span th:text="#{email.deletion.regards}">Regards, </span>
+      <br />
+      <em th:text="#{email.signature}">Abofonsa BridgeCare.</em>
+    </p>
+  </body>
+</html>

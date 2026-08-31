@@ -273,6 +273,20 @@ before the next JDK bump.
 
   `[~]` **The health indicator is off in the repository and on only in production's compose**, which is the reverse of the usual arrangement and worth stating rather than reversing: `mail: UP` proves Spring connected, negotiated STARTTLS and authenticated — nothing more. It read `UP` on 2026-08-02 while the credential had silently rotted. See `docs/open-issues.md` §2: **no message is known to have ever left this stack**, and that is the item that closes this one properly.
 
+### Deletion mails, and the one consumer that carries them (2026-08-31)
+
+- `[x]` **A patient is told when their deletion request moves.** Until now they were told nothing — they raised the one irreversible request in the product and learnt the outcome by signing back in, if they thought to. After a completed erasure they could not even do that, because there is no record left to show them: **the mail is the only proof they get.**
+
+  `DeletionRequestMailer` consumes `DeletionRequestChanged` off `patient-events` and sends on all four transitions: requested (with the date in writing), withdrawn, completed, refused. `MailService` gained the four methods, four Thymeleaf templates, and fifteen message keys across all four bundles.
+
+  The refusal mail does **not** carry the administrator's reason. That text is unbounded and this address is outside the product; the patient reads it in the portal, authenticated. The completed mail deliberately links nowhere into the app — by then there is nothing to show, and sending somebody to an empty screen is a worse answer than none.
+
+- `[x]` **The `patientEventsConsumer` binding moved to `PatientEventMailRouter`.** There can be exactly one function on it — `spring.cloud.function.definition` names it and `patientEventsConsumer-in-0` points it at the topic — so a second family of mail could not bring a second consumer. The router is that seam: adding a third is a line there rather than reopening whichever mailer owned the binding first.
+
+  **The bean name comes from the method, never the class**, so the move is invisible to the binding. That was safe by construction and is now safe by test.
+
+- `[x]` **`PatientEventConsumerBindingIT`** — new, and the point is the failure it catches. Rename the bound method, or move it without keeping its name, and Spring Cloud Stream has no function to bind: the context starts, the gateway serves every request as before, and **every mail in the product stops with nothing failing anywhere.** The producer side has had this cover since it was written; the consumer side had none. Four assertions — the bean exists under the name the YAML expects, it is bound to `patient-events`, it has a consumer group (without one each replica is a duplicate notifier), and both mailers are reachable from it. 4 tests, 802s.
+
 ### Spring Boot 4 upgrade — finished, with leftovers
 
 The Java 26 / Spring Boot 4 upgrade had left the project unbuildable; `./mvnw` could not even read the POM. **`./mvnw verify` is now green: 111 tests, 0 failures, 0 errors.** Fixed: renamed `spring-cloud-starter-gateway` → `spring-cloud-starter-gateway-server-webflux` and `spring-boot-starter-aop` → `spring-boot-starter-aspectj`, pinned the artifacts Spring Boot 4's BOM no longer manages (`spring-boot-loader-tools`, Dropwizard `metrics-core`), dropped the unpublished `jackson-datatype-jsr310`, added `spring-boot-webflux-test`, moved the Mongo properties to the `spring.mongodb.*` prefix (the old one is deprecated at _error_ level, so the configured URI was being ignored at runtime), and updated the moved/renamed types (`MongoAutoConfiguration`, Jackson 3 annotations and `JacksonException`, Hibernate Validator's `EmailValidator`, `@MockitoBean`, `@WebFluxTest`, `@AutoConfigureWebTestClient`). Two test-layer breakages were fixed alongside:

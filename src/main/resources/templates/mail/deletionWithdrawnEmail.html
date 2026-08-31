@@ -1,0 +1,19 @@
+<!doctype html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${#locale.language}" lang="en">
+  <head>
+    <title th:text="#{email.deletion.withdrawn.title}">Your record will not be deleted</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <link rel="icon" th:href="@{|${baseUrl}/favicon.ico|}" />
+  </head>
+  <body>
+    <p th:text="#{email.deletion.withdrawn.greeting(${user.login})}">Dear</p>
+    <p th:text="#{email.deletion.withdrawn.text1}">
+      You have withdrawn your request to delete your health record. Nothing has been erased and your record is unchanged.
+    </p>
+    <p>
+      <span th:text="#{email.deletion.regards}">Regards, </span>
+      <br />
+      <em th:text="#{email.signature}">Abofonsa BridgeCare.</em>
+    </p>
+  </body>
+</html>

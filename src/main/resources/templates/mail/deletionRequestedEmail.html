@@ -1,0 +1,26 @@
+<!doctype html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${#locale.language}" lang="en">
+  <head>
+    <title th:text="#{email.deletion.requested.title}">We have your request to delete your record</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <link rel="icon" th:href="@{|${baseUrl}/favicon.ico|}" />
+  </head>
+  <body>
+    <p th:text="#{email.deletion.requested.greeting(${user.login})}">Dear</p>
+    <!-- The date is the point of this mail. Until it existed, the only place a patient could see when their record
+         would be erased was a screen they had to sign in to reach. -->
+    <p th:text="#{email.deletion.requested.text1(${dueDate})}">
+      We have your request to delete your health record. It will be carried out by the date shown, and an administrator carries it out
+      rather than a single tap.
+    </p>
+    <p th:text="#{email.deletion.requested.text2}">You can withdraw the request at any time before then, from your profile.</p>
+    <p>
+      <a th:with="url=(@{|${baseUrl}/delete-account|})" th:href="${url}" th:text="${url}">Manage this request</a>
+    </p>
+    <p>
+      <span th:text="#{email.deletion.regards}">Regards, </span>
+      <br />
+      <em th:text="#{email.signature}">Abofonsa BridgeCare.</em>
+    </p>
+  </body>
+</html>

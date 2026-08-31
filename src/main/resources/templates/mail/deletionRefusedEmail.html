@@ -1,0 +1,25 @@
+<!doctype html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${#locale.language}" lang="en">
+  <head>
+    <title th:text="#{email.deletion.refused.title}">Your deletion request was not carried out</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <link rel="icon" th:href="@{|${baseUrl}/favicon.ico|}" />
+  </head>
+  <body>
+    <p th:text="#{email.deletion.refused.greeting(${user.login})}">Dear</p>
+    <!-- The reason is not in this mail on purpose: an administrator's free text is unbounded, and this address is
+         outside the product. The patient reads it in the portal, which is authenticated. -->
+    <p th:text="#{email.deletion.refused.text1}">
+      Your request to delete your health record was not carried out. Your record is unchanged. The reason is on the request itself, in your
+      profile.
+    </p>
+    <p>
+      <a th:with="url=(@{|${baseUrl}/delete-account|})" th:href="${url}" th:text="${url}">See the reason</a>
+    </p>
+    <p>
+      <span th:text="#{email.deletion.regards}">Regards, </span>
+      <br />
+      <em th:text="#{email.signature}">Abofonsa BridgeCare.</em>
+    </p>
+  </body>
+</html>
