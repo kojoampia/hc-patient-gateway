@@ -311,8 +311,19 @@ Deploying the stack for the first time (see `hc-patient/deploy`) surfaced two mo
 
 Still open:
 
-- `[ ]` Upgrade to Testcontainers 2.x. The build pins 1.21.4 ahead of Spring Boot 4's BOM (2.0.5) because 2.x re-coordinated every module (`junit-jupiter` → `testcontainers-junit-jupiter`) and moved the container classes (`org.testcontainers.containers.KafkaContainer` → `org.testcontainers.kafka.KafkaContainer`).
-- `[ ]` Revisit the Modernizer exclusion for `String.equalsIgnoreCase`. Modernizer was bumped 2.7.0 → 3.5.0 (2.7.0 cannot read Java 26 bytecode and silently failed the build), and it now suggests `String.equalsFoldCase`. That is not an equivalent swap for login/email comparison, so the rule is excluded in `pom.xml`.
+- `[ ]` **Upgrade to Testcontainers 2.x** — still open, and scoped 2026-08-31 so the next attempt starts from the real shape rather than the pom's summary of it. The build pins 1.21.4 ahead of Spring Boot 4's BOM (2.0.5).
+
+  **The code change is small: three files here and three in `hc-patient-service`**, four imports between them — `containers.KafkaContainer`, `containers.MongoDBContainer`, `containers.output.Slf4jLogConsumer`, `utility.DockerImageName` — plus the pom's artifact renames (`junit-jupiter` → `testcontainers-junit-jupiter`).
+
+  **What the pom's comment does not say is the part that makes it more than an import sweep.** 2.x's `org.testcontainers.kafka.KafkaContainer` is built for the `apache/kafka` image; these tests run `confluentinc/cp-kafka` (7.6.0 here, 7.5.2 in the api). So the upgrade is also an image change, and an image change under a broker is a behavioural change rather than a rename — it wants a full `verify` in both repos to believe, and those are Testcontainers runs measured in tens of minutes, not seconds.
+
+  Two constraints on doing it: **both repos move together** — the pin's stated reason is that 1.21.4 "matches hc-patient-service", and a divergence there is worse than being a version behind — and there is no functional gain, so it belongs in a session with time to run both suites rather than at the end of one.
+
+  Worth noting the alignment that argues for eventually doing it: the _quality_ stack already runs `apache/kafka:3.9.0`, so the tests and the deployed broker currently disagree about which Kafka they exercise.
+
+- `[x]` **The Modernizer exclusion is right, and stays — reviewed 2026-08-31.** The rule suggests `String.equalsFoldCase`, and full Unicode case folding is **not** equivalent to `equalsIgnoreCase`: it also matches `"Fuß"` against `"FUSS"`. These call sites compare logins and email addresses, where two distinct identities collapsing into one is an authentication defect rather than a style question.
+
+  The exclusion already carried that reasoning in `pom.xml`; what was missing was a decision, so this is it. Note the shape of the finding — **a linter recommending a subtly different method is the kind of suggestion that is right in general and wrong here**, and the exclusion is worth more than the one-line fix it prevents.
 
 ## Phase B — auth/onboarding features
 
