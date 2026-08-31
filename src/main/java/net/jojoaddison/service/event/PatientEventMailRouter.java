@@ -30,10 +30,16 @@ public class PatientEventMailRouter {
 
     private final CareDelegationMailer careDelegationMailer;
     private final DeletionRequestMailer deletionRequestMailer;
+    private final DeletionAccountCloser deletionAccountCloser;
 
-    public PatientEventMailRouter(CareDelegationMailer careDelegationMailer, DeletionRequestMailer deletionRequestMailer) {
+    public PatientEventMailRouter(
+        CareDelegationMailer careDelegationMailer,
+        DeletionRequestMailer deletionRequestMailer,
+        DeletionAccountCloser deletionAccountCloser
+    ) {
         this.careDelegationMailer = careDelegationMailer;
         this.deletionRequestMailer = deletionRequestMailer;
+        this.deletionAccountCloser = deletionAccountCloser;
     }
 
     @Bean
@@ -44,5 +50,10 @@ public class PatientEventMailRouter {
     void route(PatientEvent event) {
         careDelegationMailer.handle(event);
         deletionRequestMailer.handle(event);
+        // Mail before closure, and the order is written down rather than relied on: it stopped mattering when the
+        // closure became a deactivation rather than a delete (the mail resolves its recipient by looking the
+        // account up, and a deactivated row is still there to find). It would matter again the day somebody
+        // changes that decision.
+        deletionAccountCloser.handle(event);
     }
 }

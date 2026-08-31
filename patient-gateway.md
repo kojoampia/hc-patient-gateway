@@ -285,6 +285,14 @@ before the next JDK bump.
 
   **The bean name comes from the method, never the class**, so the move is invisible to the binding. That was safe by construction and is now safe by test.
 
+- `[x]` **An erased record's login is closed — decided and built 2026-08-31.** `DeletionAccountCloser` consumes the same `COMPLETED` event and **deactivates** the `User`. Until now a completed erasure left somebody able to sign in, resolving to no patient and seeing an empty portal: correct behaviour, and not the same thing as being gone.
+
+  **Deactivated rather than deleted, and the cost is stated rather than glossed.** Deleting is what the patient literally asked for and would remove their email address too. Deactivating keeps the audit trail whole — the retained `DeletionRequest` names a login, and a login resolving to nothing is a weaker record of what was done than one resolving to a closed account. The price is that **this retains an email**, the one piece of personal data erased everywhere else in the flow. `DeletionAccountCloserUnitTest` pins the choice as a choice so that changing it is a decision rather than an edit — and note it changes two published documents with it: the privacy policy and the Play data-safety declaration both describe what erasure removes.
+
+  Only `COMPLETED` closes anything. Closing on a withdrawal would lock somebody out of a record they had just decided to keep, which is tested.
+
+  One thing the decision quietly bought: **ordering stopped mattering.** A delete would have had to run strictly after the mailer, since the mail resolves its recipient by looking the account up — close it first and there is nobody left to tell. A deactivated row is still there to find. The router still calls mail first, and says why in a comment, because it would matter again the day somebody revisits this.
+
 - `[x]` **`PatientEventConsumerBindingIT`** — new, and the point is the failure it catches. Rename the bound method, or move it without keeping its name, and Spring Cloud Stream has no function to bind: the context starts, the gateway serves every request as before, and **every mail in the product stops with nothing failing anywhere.** The producer side has had this cover since it was written; the consumer side had none. Four assertions — the bean exists under the name the YAML expects, it is bound to `patient-events`, it has a consumer group (without one each replica is a duplicate notifier), and both mailers are reachable from it. 4 tests, 802s.
 
 ### Spring Boot 4 upgrade — finished, with leftovers
