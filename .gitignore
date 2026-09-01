@@ -158,3 +158,7 @@ Desktop.ini
 # dependency-check NVD dataset. CI points -DdataDirectory here so actions/cache can restore it
 # across runs; a local run with the same flag would otherwise drop ~1 GB into the working tree.
 /.dependency-check-data/
+
+# Never commit a real credential here again. The copy tracked at this path from 2024-03-30
+# until 2026-09-01 held live SMTP and registry passwords, identical across five repositories.
+src/main/docker/.env

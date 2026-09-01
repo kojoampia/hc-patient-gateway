@@ -5,7 +5,6 @@ services:
     image: hc-patient-gateway:0.0.1
     container_name: hc-patient-gateway
     hostname: patient-gateway
-    env_file: .env
     environment:
       - _JAVA_OPTIONS=-Xmx256m -Xms128m
       - SERVER_PORT=5501
@@ -23,15 +22,6 @@ services:
       # JHIPSTER CONFIG
       - JHIPSTER_SLEEP=5 # gives time for other services to boot before the application
       #- JHIPSTER_METRICS_LOGS_ENABLED=true
-      - JHIPSTER_MAIL_FROM=$${SMTP_MAIL_FROM}
-      - JHIPSTER_MAIL_BASEURL=$${SMTP_MAIL_BASE}
-      # SMTP Mail Config Start
-      - SPRING_MAIL_USERNAME=$${SMTP_MAIL_USER}
-      - SPRING_MAIL_PASSWORD=$${SMTP_MAIL_PASSWORD}
-      - SPRING_MAIL_HOST=$${SMTP_MAIL_SERVER}
-      - SPRING_MAIL_PORT=$${SMTP_MAIL_PORT}
-      - SPRING_MAIL_FROM=$${SMTP_MAIL_FROM}
-      # SMTP Mail Config End
       - SPRING_MAIL_TEST_CONNECTION=true
       - SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH=true
       - SPRING_MAIL_PROPERTIES_MAIL_SMTP_DEBUG=true
