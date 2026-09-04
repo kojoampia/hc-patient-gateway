@@ -145,6 +145,46 @@ spring:
           # It is proxied rather than called from the browser because the dashboard builds same-origin in production
           # (SERVER_API_URL empty, <base href="/">), no CORS is configured anywhere in this subsystem, and production
           # enforces a CSP. A direct call would need all three changed to fetch a price list.
+          #
+          # ⚠ THIS LIST IS REPLACED, NOT EXTENDED, BY ANY ENVIRONMENT THAT SETS
+          # SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_*. Spring Boot does not merge a collection
+          # across property sources: the highest-precedence source that contributes any element
+          # supplies the whole list. Production and quality both set ROUTES_0 (hcpatientservice) and,
+          # since 2026-09-04, ROUTES_1 (professionalservice, for the patient day plan) — so in every
+          # deployed environment the route table is exactly those two and `abofonsa-plans` below is
+          # NOT in it.
+          #
+          # Measured rather than reasoned: on the running quality stack,
+          # `GET /api/gateway/routes` as admin returns one entry, `/services/hcpatientservice/**`,
+          # and `GET /api/plans` answers 404 "No static resource api/plans". That is a real defect
+          # in the price-list proxy and it is NOT this block's to fix — it is hc-patient's
+          # docs/backlog.md item 4. What matters here is the consequence for whoever adds the next
+          # route: adding it below adds it in development only.
+          #
+          # NEVER DECLARE A CROSS-STACK ROUTE ON /api/**, here or in a compose file. It would
+          # swallow this gateway's own /api/account, /api/authenticate and /api/users and proxy
+          # authentication itself to another stack. GatewayRoutePolicyTest holds that line over this
+          # file, with `abofonsa-plans` named as the one exception it is.
+          #
+          # A CROSS-STACK ROUTE ON THIS GATEWAY NAMES AN ENDPOINT, NOT A SERVICE. The second rule,
+          # and the one that cost something: the professionalservice route shipped on 2026-09-04 as
+          # `Path=/services/professionalservice/**` and was narrowed on 2026-09-05 to
+          # `Path=/services/professionalservice/api/duty-roster/customer/**`.
+          #
+          # A whole-service prefix is safe on a gateway whose account holders are staff. It is not
+          # safe here. `/services/**` is .authenticated() in SecurityConfiguration, hc-professional's
+          # api gates /api/** the same way, and its ProfileResource.getAllProfiles carries no
+          # @PreAuthorize and no caller scoping — so the wide predicate let any patient account read
+          # the clinician staff directory, card numbers and home addresses included, and made
+          # /api/profiles/email/{email} an existence oracle on a clinician's address. hc-admin's
+          # gateway may carry a whole-service prefix precisely because its callers are
+          # administrators; here the predicate does the work the caller population does not.
+          #
+          # Neither predicate is declared in this file — both live in deploy/prod-server/compose.yml
+          # and quality/compose.yml, which replace this list entire. This note is where the rule is
+          # written down; quality/startup.sh --verify is where it is executed, against a running
+          # stack with a real patient token, because nothing in this repository can read a sibling
+          # repository's compose file.
           routes:
             - id: abofonsa-plans
               uri: ${abofonsa.base-url:https://web.abofonsa.com}
