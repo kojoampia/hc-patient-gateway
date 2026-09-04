@@ -165,6 +165,26 @@ spring:
           # swallow this gateway's own /api/account, /api/authenticate and /api/users and proxy
           # authentication itself to another stack. GatewayRoutePolicyTest holds that line over this
           # file, with `abofonsa-plans` named as the one exception it is.
+          #
+          # A CROSS-STACK ROUTE ON THIS GATEWAY NAMES AN ENDPOINT, NOT A SERVICE. The second rule,
+          # and the one that cost something: the professionalservice route shipped on 2026-09-04 as
+          # `Path=/services/professionalservice/**` and was narrowed on 2026-09-05 to
+          # `Path=/services/professionalservice/api/duty-roster/customer/**`.
+          #
+          # A whole-service prefix is safe on a gateway whose account holders are staff. It is not
+          # safe here. `/services/**` is .authenticated() in SecurityConfiguration, hc-professional's
+          # api gates /api/** the same way, and its ProfileResource.getAllProfiles carries no
+          # @PreAuthorize and no caller scoping — so the wide predicate let any patient account read
+          # the clinician staff directory, card numbers and home addresses included, and made
+          # /api/profiles/email/{email} an existence oracle on a clinician's address. hc-admin's
+          # gateway may carry a whole-service prefix precisely because its callers are
+          # administrators; here the predicate does the work the caller population does not.
+          #
+          # Neither predicate is declared in this file — both live in deploy/prod-server/compose.yml
+          # and quality/compose.yml, which replace this list entire. This note is where the rule is
+          # written down; quality/startup.sh --verify is where it is executed, against a running
+          # stack with a real patient token, because nothing in this repository can read a sibling
+          # repository's compose file.
           routes:
             - id: abofonsa-plans
               uri: ${abofonsa.base-url:https://web.abofonsa.com}

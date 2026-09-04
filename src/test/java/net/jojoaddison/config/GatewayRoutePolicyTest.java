@@ -60,6 +60,10 @@ class GatewayRoutePolicyTest {
      */
     private static final List<String> ALLOWED_API_PATHS = List.of("/api/plans");
 
+    /** The predicate the professionalservice route must carry, and the one it must not. */
+    private static final String NARROW_PREDICATE = "Path=/services/professionalservice/api/duty-roster/customer/**";
+    private static final String WIDE_PREDICATE = "Path=/services/professionalservice/**";
+
     /**
      * <b>No route declared here may take a prefix of this gateway's own {@code /api} surface.</b>
      *
@@ -117,15 +121,38 @@ class GatewayRoutePolicyTest {
     }
 
     /**
-     * <b>{@code /services/**} stays {@code .authenticated()}, and the patient day plan depends on
-     * it.</b>
+     * <b>{@code /services/**} stays {@code .authenticated()} — and the control that makes that safe
+     * is the route predicate, not this rule.</b>
      *
      * <p>hc-professional tightened its own equivalent rule to a list of authorities on 2026-09-03,
-     * and copying that here would break the thing this route was added for: the caller is a patient,
-     * holding {@code ROLE_USER} and — where hc-patient issues it — {@code ROLE_PATIENT}, and neither
-     * is a clinical authority. The real boundary is the far endpoint's, which refuses anybody who is
-     * not that customer with a 403 an unknown id gets identically. A rule here would be a second,
-     * weaker copy of it.
+     * and copying that here would break the thing the cross-stack route was added for: the caller is
+     * a patient, holding {@code ROLE_USER} and — where hc-patient issues it — {@code ROLE_PATIENT},
+     * and neither is a clinical authority. That much this test has always said, and it is still
+     * right.
+     *
+     * <p><b>What it said and got wrong was that those were the only two options.</b> It presented
+     * "tighten the matcher" against "leave it open" and concluded the second, which reads as though
+     * nothing else could be done — so it pinned the matcher open while leaving the actual exposure
+     * unexamined for a day. There is a third option and it is the one in force: <b>narrow the route
+     * predicate</b>, so the only path that reaches hc-professional at all is the one the feature
+     * needs. Everything else 404s at this gateway, before authorization is consulted.
+     *
+     * <p>The exposure was not hypothetical. With the predicate written
+     * {@code Path=/services/professionalservice/**}, this gateway's {@code .authenticated()} and
+     * hc-professional's own {@code /api/** -> authenticated()} were the whole of the check, and
+     * {@code ProfileResource.getAllProfiles} carries no {@code @PreAuthorize} and no caller scoping.
+     * Any hc-patient account could read the clinician staff directory — {@code birth_date},
+     * {@code mobile_phone}, {@code card_number}, {@code address}, {@code emergency_contact} — and
+     * {@code /api/profiles/email/{email}} answered as an existence oracle on a clinician's address.
+     * The predicate is now
+     * {@code Path=/services/professionalservice/api/duty-roster/customer/**}.
+     *
+     * <p><b>Why hc-admin may do what this gateway may not.</b> hc-admin's gateway carries
+     * whole-service prefixes and that is fine there: everybody holding an account on it is an
+     * administrator or an operator, so a wide predicate exposes staff data to staff. Every account
+     * on this gateway belongs to a member of the public. The same predicate is a different decision
+     * on the two gateways because the caller population is different, and that — not the shape of
+     * the string — is what has to be argued before this one is widened.
      *
      * <p>Asserted structurally because no request can see the difference: with the rule tightened,
      * a patient token gets 403 and so does a caller with no route at all, and the screen shows an
@@ -139,9 +166,80 @@ class GatewayRoutePolicyTest {
             .as(
                 "/services/** must stay .authenticated(). The patient day plan is reached by a patient " +
                 "token holding no clinical authority, and its real boundary is hc-professional's own " +
-                "403-never-an-empty-list check. Narrowing here breaks the portal and buys nothing."
+                "403-never-an-empty-list check. Narrowing here breaks the portal — narrow the ROUTE " +
+                "PREDICATE in the compose files instead, which is what actually keeps the rest of that " +
+                "service out of reach. See this method's javadoc."
             )
             .contains(".pathMatchers(\"/services/**\").authenticated()");
+    }
+
+    /**
+     * <b>The compensating control has to be written down where the matcher is left open.</b>
+     *
+     * <p>Leaving {@code /services/**} at {@code .authenticated()} is only defensible alongside a
+     * route predicate that names an endpoint. The predicates themselves live in
+     * {@code deploy/prod-server/compose.yml} and {@code quality/compose.yml} — sibling repositories,
+     * absent from this module's CI checkout — so no test here can read the value in force. Two
+     * things can be held, and both are:
+     *
+     * <ul>
+     *   <li><b>Here:</b> that {@code application.yml}, the file a person editing routing opens,
+     *       states the rule and names the narrow predicate verbatim. A copy-paste widening usually
+     *       starts by reading this block.
+     *   <li><b>In {@code hc-patient/quality/startup.sh --verify}:</b> the executable copy. It signs
+     *       in as a real patient and requires {@code /services/professionalservice/api/profiles} to
+     *       404 <em>and</em> the body to contain no {@code card_number}. That check fails the moment
+     *       the predicate is widened back, in either compose file, and it is the only thing that
+     *       does.
+     * </ul>
+     *
+     * <p>Documentary rather than behavioural, and named as such — but the alternative was a
+     * cross-repository file read that would pass vacuously in CI, which is the failure mode
+     * hc-admin's pagination sweep is the standing lesson about.
+     */
+    @Test
+    void theRoutingBlockRecordsThatACrossStackRouteNamesAnEndpointRatherThanAService() {
+        String yml = read(APPLICATION_YML);
+
+        assertThat(yml)
+            .as("application.yml must carry the endpoint-not-service rule beside the routes block")
+            .contains("A CROSS-STACK ROUTE ON THIS GATEWAY NAMES AN ENDPOINT, NOT A SERVICE");
+        assertThat(yml)
+            .as("...and name the narrow predicate in force, so a widening is visible as a diff against it")
+            .contains(NARROW_PREDICATE);
+        // The wide form does appear in this file — the note names it, because a rule that will not
+        // say what it forbids is not a rule. What must not appear is a line that IS it: something a
+        // reader can copy out whole and paste into a compose file. A line ending in the wide
+        // predicate is that; the same string mid-sentence is not.
+        List<String> copyableWideDeclarations = read(APPLICATION_YML)
+            .lines()
+            .map(line -> line.replaceFirst("^\\s*#?\\s*", "").trim())
+            .filter(line -> line.equals(WIDE_PREDICATE) || line.endsWith(" " + WIDE_PREDICATE))
+            .toList();
+
+        assertThat(copyableWideDeclarations)
+            .as(
+                "The whole-service predicate must not stand in this file as a line a reader can copy. " +
+                "Keep it inside the sentence that explains what it exposed, or drop it — but do not " +
+                "leave it looking like the declaration to use."
+            )
+            .isEmpty();
+    }
+
+    /**
+     * The rule is worth nothing if the reason is not beside it.
+     *
+     * <p>Narrow predicates read as fussiness once the incident is forgotten, and the next person
+     * widens one to make a second endpoint work. What stops that is the sentence explaining that
+     * this gateway's account holders are patients and hc-admin's are administrators — so the file
+     * has to say why hc-admin is allowed to do the thing this one is not.
+     */
+    @Test
+    void theRoutingBlockSaysWhyAWholeServicePrefixIsAcceptableOnHcAdminAndNotHere() {
+        String yml = read(APPLICATION_YML);
+
+        assertThat(yml).as("the caller population is the argument — say so, or the narrowing looks arbitrary").contains("administrators");
+        assertThat(yml).as("...and name what the wide predicate actually exposed").contains("staff directory");
     }
 
     private static List<String> declaredPaths() {
