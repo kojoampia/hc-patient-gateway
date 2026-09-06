@@ -216,6 +216,22 @@ spring:
         binder:
           replicationFactor: 1
           auto-create-topics: true
+          # THIS IS THE PROPERTY THAT GOVERNS SENDS, and it is the one to set in a compose file.
+          #
+          # backlog item 7. Everything in this subsystem publishes through `StreamBridge`
+          # (`PatientEventPublisher`, plus the generated `*KafkaResource`), and StreamBridge goes
+          # through the BINDER — so `spring.cloud.stream.kafka.binder.brokers`, overridden as
+          # SPRING_CLOUD_STREAM_KAFKA_BINDER_BROKERS, is what decides where an event actually lands.
+          # `SPRING_KAFKA_BOOTSTRAP_SERVERS` configures Spring Boot`s own KafkaTemplate/KafkaAdmin,
+          # which NOTHING HERE USES. The quality stack sets both and production sets only this one;
+          # production is not broken by that, and this note exists so the next person copying a
+          # compose file copies the half that matters rather than the other one.
+          #
+          # DO NOT "FIX" THE DEFAULT BELOW. localhost:9092 is correct for `./mvnw` on a developer
+          # machine, which is the one case with no compose file to override it. The defect item 7
+          # records is the ABSENCE OF A CHECK, not the value: with no override the service starts,
+          # serves, reports healthy, and discards every event it produces. `deploy.sh` asserts the
+          # resolved broker since 2026-09-06, and `quality/startup.sh --verify` since 2026-09-05.
           brokers: localhost:9092
         bindings:
           patientEvents-out-0:
