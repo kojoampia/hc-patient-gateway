@@ -51,6 +51,17 @@ class GatewayRoutePolicyTest {
     private static final Pattern PATH_PREDICATE = Pattern.compile("^\\s*-\\s*Path=(\\S+)\\s*$", Pattern.MULTILINE);
 
     /**
+     * One whole {@code - id: …} entry in the routes list, captured so a rule can be asserted over a
+     * route rather than over the file. Runs from an {@code id:} to the next one or to end of input,
+     * which is enough while the routes list is the last block in its section; the group is the id,
+     * so a failure names the offending route instead of only saying that one exists.
+     */
+    private static final Pattern ROUTE_BLOCK = Pattern.compile(
+        "^\\s*-\\s*id:\\s*(\\S+)\\s*$.*?(?=^\\s*-\\s*id:|\\z)",
+        Pattern.MULTILINE | Pattern.DOTALL
+    );
+
+    /**
      * The one route in this file that is not {@code /services/**}-shaped, and why.
      *
      * <p>{@code abofonsa-plans} proxies another product's price list at {@code /api/plans}. It is a
@@ -240,6 +251,53 @@ class GatewayRoutePolicyTest {
 
         assertThat(yml).as("the caller population is the argument — say so, or the narrowing looks arbitrary").contains("administrators");
         assertThat(yml).as("...and name what the wide predicate actually exposed").contains("staff directory");
+    }
+
+    /**
+     * <b>A route that leaves the estate must not carry the caller's token.</b>
+     *
+     * <p>Added 2026-09-06 with backlog item 4, and the reason is worth stating because the rule was
+     * learned rather than designed. {@code JWTRelay} is a <em>default</em> filter — declared under
+     * {@code default-filters}, so it applies to every route in this file, re-setting the caller's
+     * bearer token on the outgoing request. That is exactly right for the routes that stay inside
+     * the estate, and exactly wrong for {@code abofonsa-plans}, which is the only one that does not.
+     *
+     * <p>The immediate symptom was that the route could never have worked: Abofonsa answers 401 to
+     * any {@code Authorization} header it cannot validate, so {@code /api/plans} would have failed
+     * even once it was finally present in a deployed route table. Measured — the same URL returns
+     * 200 with no header and 401 with a bearer token.
+     *
+     * <p>The durable reason is the other one. <b>The three stacks share one signing key</b>, so a
+     * relayed token is not merely useless to another product — it is a live credential for
+     * hc-patient, hc-admin and hc-professional, handed to somewhere that has no need of it. That
+     * stays true whatever Abofonsa does with the header, which is why this is a test and not a
+     * comment.
+     *
+     * <p>Written as "every route whose uri is not internal strips it" rather than naming
+     * {@code abofonsa-plans}, so a second outbound route inherits the rule instead of quietly
+     * missing it.
+     */
+    @Test
+    void aRouteLeavingTheEstateStripsTheRelayedAuthorizationHeader() {
+        String yml = read(APPLICATION_YML);
+        assertThat(yml).as("JWTRelay must still be a default filter — this test is only meaningful while it is").contains("- JWTRelay");
+
+        List<String> offenders = new ArrayList<>();
+        Matcher route = ROUTE_BLOCK.matcher(yml);
+        while (route.find()) {
+            String block = route.group();
+            boolean leavesTheEstate = block.contains("https://") || block.contains("http://web.");
+            if (leavesTheEstate && !block.contains("RemoveRequestHeader=Authorization")) {
+                offenders.add(route.group(1));
+            }
+        }
+
+        assertThat(offenders)
+            .as(
+                "these routes reach outside the estate and would relay the caller's JWT — the three stacks share one " +
+                "signing key, so that is a live credential for all of them. Add RemoveRequestHeader=Authorization."
+            )
+            .isEmpty();
     }
 
     private static List<String> declaredPaths() {

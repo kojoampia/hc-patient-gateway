@@ -193,6 +193,22 @@ spring:
               filters:
                 # Abofonsa's own path. Rewritten here so the dashboard never has to know another product's URL shape.
                 - SetPath=/api/v1/content/plans
+                # REQUIRED, AND ITS ABSENCE MADE THIS ROUTE UNUSABLE (backlog item 4, 2026-09-06).
+                #
+                # `JWTRelay` is a DEFAULT filter — declared under default-filters above, so it applies to every route
+                # in this file, including this one. It re-sets the caller's bearer token on the outgoing request,
+                # which is exactly right for the two routes that stay inside the estate and exactly wrong here: this
+                # is the only route that LEAVES it. Abofonsa cannot validate an hc-patient token and answers 401 to
+                # any Authorization header it does not recognise — measured, 2026-09-06: the same URL returns 200
+                # with no header and 401 with a bearer token.
+                #
+                # So the route would have 401'd even if it had been in a deployed route table, and the entry that
+                # opened item 4 assumed it was merely mis-deployed. It was both. Route filters run after the default
+                # ones, so this removes what JWTRelay just added.
+                #
+                # It also means the patient's token is not sent to another product, which is the right posture
+                # independently of whether Abofonsa would have accepted it.
+                - RemoveRequestHeader=Authorization
     function:
       definition: kafkaConsumer;kafkaProducer;patientEventsConsumer
     stream:
