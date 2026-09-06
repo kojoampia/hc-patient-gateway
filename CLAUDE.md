@@ -71,6 +71,21 @@ npm run prettier:check | prettier:format
 
 Surefire excludes `**/*IT*` and `**/*IntTest*`; failsafe owns them. `-Dtest=SomethingIT` matches nothing — use `-Dit.test`. Integration tests start Mongo and Kafka via Testcontainers (Docker required, `services:up` not needed). **BlockHound** (`config/JHipsterBlockHoundIntegration`) fails any test that blocks on a reactive thread.
 
+#### When the whole suite goes red with one container
+
+**Many red tests across unrelated classes, every stack trace ending in `MongoDbTestContainer.afterPropertiesSet` → `ReplicaSetInitializationException: A single node replica set was not initialized in a set timeout: 60 attempts`, is not a regression.** It is one Mongo container missing its start window on a loaded machine — `-Pprod clean verify` produced exactly that on 2026-09-05: 18 errors across `DomainUserDetailsServiceIT`, `UserServiceIT`, `PatientEventConsumerBindingIT` and `PlansRouteIT`, and a re-run of those four alone was green. Testcontainers waits 60 attempts 100 ms apart — about six seconds — and `AWAIT_INIT_REPLICA_SET_ATTEMPTS` is a `private static final int` inside `MongoDBContainer`, so the window cannot be widened from here. It spreads because `TestContainersSpringContextCustomizerFactory` assigns its static bean only _after_ the container has started: a failed start leaves it null, the next class builds its own container and gets its own six seconds to miss, and classes sharing the failed context report `ApplicationContext failure threshold (1) exceeded` without starting anything at all.
+
+`MongoDbTestContainer` **retries the start three times**, discarding the container between attempts — a half-started one has a partly initialised replica set and restarting _that_ loops on `ReadConcernMajorityNotAvailableYet` rather than recovering. The confusing failure becomes a slow pass. A real failure (no Docker daemon, an image tag that does not exist) still throws after the third attempt, with an error pointing at `docs/backlog.md` item 9.
+
+**Container reuse is the other lever, and it is yours rather than the repository's.** The fixture asks for `.withReuse(true)` and Testcontainers **silently ignores it** unless the machine opts in:
+
+```
+echo 'testcontainers.reuse.enable=true' >> ~/.testcontainers.properties   # per machine
+TESTCONTAINERS_REUSE_ENABLE=true ./mvnw verify                            # per run
+```
+
+With it on, one Mongo container survives across test classes and across runs: the suite is much faster locally and this contention largely stops happening. **Leave it off in CI.** A reused container carries state between runs and is not reaped, which is the wrong trade on an ephemeral runner — which is why it is a per-machine setting and there is nothing to commit here.
+
 ## Architecture
 
 Layer boundaries are enforced at build time by ArchUnit (`src/test/java/net/jojoaddison/TechnicalStructureTest.java`): `config → web → service → security → repository → domain`.
