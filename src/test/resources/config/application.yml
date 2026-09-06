@@ -43,6 +43,11 @@ spring:
                 - Path=/api/plans
               filters:
                 - SetPath=/api/v1/content/plans
+                # Mirrored from the main application.yml, which this file REPLACES WHOLESALE rather
+                # than merging with — the trap CLAUDE.md names, and which has already produced three
+                # defects with a green suite, one of them on this very route. See the main file for
+                # why a route leaving the estate must not relay the caller's token.
+                - RemoveRequestHeader=Authorization
     consul:
       discovery:
         enabled: false
