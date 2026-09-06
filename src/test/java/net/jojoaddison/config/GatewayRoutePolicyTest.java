@@ -197,16 +197,29 @@ class GatewayRoutePolicyTest {
      *   <li><b>Here:</b> that {@code application.yml}, the file a person editing routing opens,
      *       states the rule and names the narrow predicate verbatim. A copy-paste widening usually
      *       starts by reading this block.
-     *   <li><b>In {@code hc-patient/quality/startup.sh --verify}:</b> the executable copy. It signs
-     *       in as a real patient and requires {@code /services/professionalservice/api/profiles} to
-     *       404 <em>and</em> the body to contain no {@code card_number}. That check fails the moment
-     *       the predicate is widened back, in either compose file, and it is the only thing that
-     *       does.
+     *   <li><b>In {@code hc-patient/quality/startup.sh --verify}:</b> the strongest of the three. It
+     *       signs in as a real patient and requires
+     *       {@code /services/professionalservice/api/profiles} to 404 <em>and</em> the body to
+     *       contain no {@code card_number}. It runs in that repository's CI on every push, so it is
+     *       automated as well as strong — but it exercises {@code quality/compose.yml} and never
+     *       opens the production one.
+     *   <li><b>In {@code hc-patient/deploy/tools/check-route-predicates.sh}:</b> a text assertion
+     *       over {@code prod-server/compose.yml}, run by that repository's CI and by
+     *       {@code deploy.sh} preflight. Weaker than the live probe, and the only thing that reads
+     *       the <em>production</em> predicate at all.
      * </ul>
      *
-     * <p>Documentary rather than behavioural, and named as such — but the alternative was a
-     * cross-repository file read that would pass vacuously in CI, which is the failure mode
-     * hc-admin's pagination sweep is the standing lesson about.
+     * <p><b>THIS TEST IS NOT THE CONTROL, AND SHOULD NOT BE COUNTED AS ONE</b> (backlog item 8). It
+     * is documentary, and its own assertion says why: {@code yml} is <em>this</em> repository's
+     * {@code application.yml}, and the professionalservice predicate appears there only inside a
+     * comment. Widening the real route means editing a compose file in {@code deploy/} or
+     * {@code quality/}, which this test never opens — so it fails when somebody deletes the rule
+     * text and passes when somebody widens the route. Keep it for what it does do: the block a
+     * person editing routing actually reads stays truthful.
+     *
+     * <p>The alternative — a cross-repository file read — would pass vacuously in CI, which is the
+     * failure mode hc-admin's pagination sweep is the standing lesson about. The answer was to put
+     * the check in the repository that owns the string, not to make this one reach further.
      */
     @Test
     void theRoutingBlockRecordsThatACrossStackRouteNamesAnEndpointRatherThanAService() {
