@@ -10,6 +10,65 @@ Status legend: `[x]` done · `[~]` partial / diverges from plan · `[ ]` not sta
 
 ## What changed since the last baseline
 
+### Registrations and sign-ins are counted, by outcome (2026-09-10 — `docs/backlog.md` item 34)
+
+The gateway half of the dashboard the architect asked for. **This repo owns the meters only**; the Grafana
+dashboard is `hc-patient-quality`'s and is not built here. Four series, and what each one means matters more
+than that it exists, because "failed logins: 12" is ambiguous between attempts, accounts and episodes.
+
+| Series                                    | Type    | Tags                                                           | Unit     | One increment means                                         |
+| ----------------------------------------- | ------- | -------------------------------------------------------------- | -------- | ----------------------------------------------------------- |
+| `account.registrations`                   | gauge   | `state=activated` \| `not-activated`                           | accounts | (a level) how many accounts are in that state **right now** |
+| `account.registrations.sampled.timestamp` | gauge   | —                                                              | seconds  | when the population was last read successfully              |
+| `security.authentication.logins`          | counter | `outcome=success`                                              | logins   | one sign-in that minted a token — **per attempt**           |
+| `security.authentication.failed-logins`   | counter | `cause=bad-credentials` \| `not-activated` \| `account-locked` | failures | see below — **per account** for two of the three            |
+
+- **Registrations are a standing population, not a rate.** The alternative was counting `AccountCreated` /
+  `AccountActivated` at emission. That answers "how many registered this week"; it needs the broker to have
+  been up, it restarts from zero, and it can never say how many accounts are sitting unactivated _right now_ —
+  which is the number an undelivered activation mail shows up in. `RegistrationMetersService` is fed by
+  `RegistrationMetricsSampler`, a `@Scheduled` reactive `countByActivated` every 60s. **"not-activated" means
+  never activated**; `User.activated` is one-way, so the two coincide. Read it as a backlog, not an alert: the
+  absolute number only grows while the product is live, and the rate of change is the thing worth watching.
+- **A gauge closure would have been a defect here.** Micrometer polls a gauge's function on the exporting
+  thread, so `countByActivated(...).block()` inside one puts a database round trip on the scrape path and a
+  blocking call one refactor away from a Netty event loop. Sampling on the scheduler and letting the gauges
+  read an `AtomicLong` keeps the query off both.
+- **Nothing is registered until the store has been read once**, so a gateway that cannot reach Mongo reports no
+  series rather than a confident zero — `MailHealthMetrics`' rule, applied. The timestamp gauge is the other
+  half of it: a sampler that died otherwise reads as a population that stopped changing.
+- **Failed sign-ins are counted per account, not per attempt**, on the 0 → 1 transition of
+  `User.failedLoginAttempts` — which `LoginAttemptService.recordFailure` now returns. Ten guesses against one
+  login is one increment, so a script cannot drown out every real user having trouble. An **unknown login is
+  counted nowhere at all**: `recordFailure` already declines to act on one, because a per-login side effect is
+  an account-existence oracle, and counting it in a metric would rebuild that oracle for anyone who can read
+  `/management/prometheus`.
+- **`account-locked` is the exception, and it is the point of the item.** A sign-in refused because the account
+  is already locked short-circuits in `AuthenticateController.authorize` and **never reaches
+  `recordFailure`** — so instrumenting that method alone, which is the obvious thing to do, goes silent for the
+  whole of a lockout window, exactly while the account is being hammered. It is counted at the controller and
+  is therefore **per refused attempt**: there is no account-level transition left to hang it on, and the volume
+  _is_ the signal. `LoginMetersIT#aRefusedAttemptAgainstALockedAccountIsCounted` asserts the counter moved
+  **and** that the persisted failure count did not, so no implementation living inside `recordFailure` can pass
+  it.
+- **Success is a counter, not a gauge** — decision 4. A gauge of live sessions is a level and this is an
+  accumulation; they share no axis and no window function turns one into the other. Two counters put
+  `increase(success[5m])` beside `increase(failed[5m])` on one panel. They are **two meter names rather than
+  one with an `outcome` tag**, because one name asserts one base unit and these two do not share one — success
+  counts attempts, failure counts accounts. The dashboard legend has to say so.
+- **All four are incremented from `AuthenticateController` and nowhere else**, because it is the only place all
+  three causes are visible at once.
+
+Where things live: `management/LoginMetersService` and `management/RegistrationMetersService` (a sibling of
+`SecurityMetersService` rather than four more methods on it — that class is generator output wired to the JWT
+decoder, and its one meter has one base unit), `service/RegistrationMetricsSampler` (in `service` because the
+ArchUnit layer rule lets nothing outside the declared layers reach `repository`, so a metrics class that
+queries `UserRepository` cannot sit beside the others).
+
+**Not verified from here:** no series named above has been observed in Mimir. Only the transport was checked —
+`hc-patient-gateway` reports `jvm_*` through the OTel agent, so the meters existing is the missing half, but
+that is an inference until a stack running this build is scraped.
+
 ### Registrations record where the family came from (2026-08-25)
 
 `web.abofonsa.com` links families to `/account/register?src=web-home` from its landing page, and the dashboard

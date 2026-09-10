@@ -72,13 +72,24 @@ public class LoginAttemptService {
     /**
      * Records a failed attempt and extends the lock if the account has run out of free ones.
      *
+     * <p><strong>The return value is the per-account signal the failed-login metric is counted on.</strong> It is
+     * true only when this failure starts a run — the account's consecutive-failure count going 0 &rarr; 1 — so a
+     * script making a thousand guesses against one login moves the metric once rather than a thousand times, and
+     * the dashboard keeps answering "how many people are failing" rather than "how loud is the noise".</p>
+     *
+     * <p>An unknown login yields an <em>empty</em> Mono rather than false: this method only ever acted on accounts
+     * it could find, and expressing "nothing happened" as absence rather than as a value is what keeps a caller
+     * from accidentally counting attempts against logins that do not exist. Counting those would rebuild the
+     * account-existence oracle the whole class is written to avoid, from the metrics side.</p>
+     *
      * @param login the login that failed.
-     * @return completion.
+     * @return true if this failure started a new run against a known account, empty if the login is unknown.
      */
-    public Mono<Void> recordFailure(String login) {
+    public Mono<Boolean> recordFailure(String login) {
         return userRepository
             .findOneByLogin(login.toLowerCase())
             .flatMap(user -> {
+                boolean firstOfRun = user.getFailedLoginAttempts() == 0;
                 int attempts = user.getFailedLoginAttempts() + 1;
                 user.setFailedLoginAttempts(attempts);
                 if (attempts > FREE_ATTEMPTS) {
@@ -88,9 +99,8 @@ public class LoginAttemptService {
                     // the time it appears here, and the log is read by more people than the account belongs to.
                     LOG.warn("Locking an account for {} after {} consecutive failed sign-ins", lock, attempts);
                 }
-                return userRepository.save(user);
-            })
-            .then();
+                return userRepository.save(user).thenReturn(firstOfRun);
+            });
     }
 
     /**

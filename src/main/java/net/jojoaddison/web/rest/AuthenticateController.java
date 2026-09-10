@@ -12,7 +12,9 @@ import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import net.jojoaddison.domain.User;
+import net.jojoaddison.management.LoginMetersService;
 import net.jojoaddison.repository.UserRepository;
+import net.jojoaddison.security.UserNotActivatedException;
 import net.jojoaddison.service.LoginAttemptService;
 import net.jojoaddison.web.rest.vm.LoginVM;
 import org.slf4j.Logger;
@@ -70,16 +72,27 @@ public class AuthenticateController {
 
     private final LoginAttemptService loginAttemptService;
 
+    /**
+     * Every sign-in outcome is counted from this class and from nowhere else.
+     *
+     * <p>This is the only place all three failure causes are visible at once. {@code LoginAttemptService} sees two
+     * of them; the third — an attempt refused because the account is already locked — short-circuits in
+     * {@link #authorize} and never reaches it. See {@link LoginMetersService} for what each number means.</p>
+     */
+    private final LoginMetersService loginMetersService;
+
     public AuthenticateController(
         JwtEncoder jwtEncoder,
         ReactiveAuthenticationManager authenticationManager,
         UserRepository userRepository,
-        LoginAttemptService loginAttemptService
+        LoginAttemptService loginAttemptService,
+        LoginMetersService loginMetersService
     ) {
         this.jwtEncoder = jwtEncoder;
         this.authenticationManager = authenticationManager;
         this.userRepository = userRepository;
         this.loginAttemptService = loginAttemptService;
+        this.loginMetersService = loginMetersService;
     }
 
     @PostMapping("/authenticate")
@@ -91,12 +104,19 @@ public class AuthenticateController {
                 // design and this gateway runs on a 256 MB heap on a shared host.
                 loginAttemptService
                     .isLocked(login.getUsername())
-                    .flatMap(locked ->
-                        Boolean.TRUE.equals(locked)
-                            // The same 401 a wrong password gets. Saying "locked" would confirm the account exists,
-                            // and enumeration is what the attacker doing this is building towards.
-                            ? Mono.<String>error(new BadCredentialsException("Authentication failed"))
-                            : authenticateAndMint(login)))
+                    .flatMap(locked -> {
+                        if (!Boolean.TRUE.equals(locked)) {
+                            return authenticateAndMint(login);
+                        }
+                        // Counted HERE, and it cannot be moved into LoginAttemptService: this branch returns without
+                        // calling anything on it, so instrumenting only recordFailure would leave the dashboard silent
+                        // for the whole of a lockout window — precisely when the account is being hammered.
+                        // LoginMetersIT#aRefusedAttemptAgainstALockedAccountIsCounted fails if this line goes away.
+                        loginMetersService.trackFailedLoginAccountLocked();
+                        // The same 401 a wrong password gets. Saying "locked" would confirm the account exists, and
+                        // enumeration is what the attacker doing this is building towards.
+                        return Mono.<String>error(new BadCredentialsException("Authentication failed"));
+                    }))
             .map(jwt -> {
                 HttpHeaders httpHeaders = new HttpHeaders();
                 httpHeaders.setBearerAuth(jwt);
@@ -109,11 +129,23 @@ public class AuthenticateController {
      *
      * <p>The failure counter is updated on the error path rather than in an exception handler so that the two can
      * never drift apart — a login that fails without being counted is a login that can be retried forever.</p>
+     *
+     * <p>The metric hangs off the same call. {@code recordFailure} answers whether this failure <em>started</em> a
+     * run against a known account, and only then is anything counted: repeated guesses inside one failing episode
+     * do not inflate the number, and an unknown login — for which that Mono is empty — is counted nowhere at all,
+     * which is what stops the metric becoming the account-existence oracle the 401 refuses to be.</p>
      */
     private Mono<String> authenticateAndMint(LoginVM login) {
         return authenticationManager
             .authenticate(new UsernamePasswordAuthenticationToken(login.getUsername(), login.getPassword()))
-            .onErrorResume(error -> loginAttemptService.recordFailure(login.getUsername()).then(Mono.error(error)))
+            .onErrorResume(
+                error ->
+                    loginAttemptService
+                        .recordFailure(login.getUsername())
+                        .filter(Boolean::booleanValue)
+                        .doOnNext(firstOfRun -> trackFailure(error))
+                        .then(Mono.error(error))
+            )
             .flatMap(auth ->
                 loginAttemptService
                     .recordSuccess(login.getUsername())
@@ -125,7 +157,45 @@ public class AuthenticateController {
                             // treats a missing email claim as "no patient records at all", which fails closed.
                             .defaultIfEmpty("")
                             .map(email -> this.createToken(auth, email, login.isRememberMe()))
-                    ));
+                    ))
+            // Counted once a token actually exists, not once the password matched — those differ if minting throws,
+            // and a success the caller never received is not a success.
+            .doOnNext(token -> loginMetersService.trackLoginSuccess());
+    }
+
+    /**
+     * Maps an authentication failure to the {@code cause} tag it is counted under.
+     *
+     * <p>Two causes reach here; the third, {@code account-locked}, never does — it short-circuits in
+     * {@link #authorize} before the authentication manager is consulted. Anything that is not a refusal to serve a
+     * never-activated account is counted as bad credentials, which is deliberate: an unrecognised failure is still
+     * a failed sign-in, and dropping it would understate the total rather than merely mis-attribute it.</p>
+     *
+     * @param error whatever {@code authenticationManager.authenticate} signalled.
+     */
+    private void trackFailure(Throwable error) {
+        if (isNotActivated(error)) {
+            loginMetersService.trackFailedLoginNotActivated();
+        } else {
+            loginMetersService.trackFailedLoginBadCredentials();
+        }
+    }
+
+    /**
+     * Whether this failure was {@code DomainUserDetailsService} refusing a never-activated account.
+     *
+     * <p>Walks the cause chain rather than testing the top frame alone. Spring Security wraps a
+     * {@code UserDetailsService} failure in {@code InternalAuthenticationServiceException} in some configurations
+     * and not in others, and a metric that silently reclassifies every not-activated refusal as bad credentials the
+     * day that changes is worse than no metric — it would read as a password problem.</p>
+     */
+    private static boolean isNotActivated(Throwable error) {
+        for (Throwable cursor = error; cursor != null; cursor = cursor.getCause() == cursor ? null : cursor.getCause()) {
+            if (cursor instanceof UserNotActivatedException) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
