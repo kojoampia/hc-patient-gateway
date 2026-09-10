@@ -7,6 +7,7 @@ import java.lang.annotation.Target;
 import net.jojoaddison.config.SecurityConfiguration;
 import net.jojoaddison.config.SecurityJwtConfiguration;
 import net.jojoaddison.config.WebConfigurer;
+import net.jojoaddison.management.LoginMetersService;
 import net.jojoaddison.management.SecurityMetersService;
 import net.jojoaddison.service.LoginAttemptService;
 import net.jojoaddison.web.rest.AuthenticateController;
@@ -28,6 +29,8 @@ import tech.jhipster.config.JHipsterProperties;
         // AuthenticateController is component-scanned into this context and now depends on
         // LoginAttemptService for per-account lockout, so the service has to be listed here too.
         LoginAttemptService.class,
+        // …and on LoginMetersService, which counts every sign-in outcome from that same controller.
+        LoginMetersService.class,
         // SecurityJwtConfiguration consults the revocation service on every decode; the real one needs a
         // reactive Mongo repository and this context starts no database.
         TokenRevocationStubConfiguration.class,

@@ -24,4 +24,16 @@ public interface UserRepository extends ReactiveMongoRepository<User, String> {
     Flux<User> findAllByIdNotNullAndActivatedIsTrue(Pageable pageable);
 
     Mono<Long> count();
+
+    /**
+     * How many accounts are in the given activation state right now.
+     *
+     * <p>Feeds the {@code account.registrations} gauges. A count rather than a fetch, so the answer costs one
+     * round trip and no documents cross the wire — the alternative shape, streaming users and counting them here,
+     * would pull every account into the gateway's 256 MB heap once a minute.</p>
+     *
+     * @param activated true for accounts that have been activated, false for those that never have.
+     * @return the number of matching accounts.
+     */
+    Mono<Long> countByActivated(boolean activated);
 }
