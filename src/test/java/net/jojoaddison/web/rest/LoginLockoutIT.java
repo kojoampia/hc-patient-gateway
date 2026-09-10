@@ -30,6 +30,9 @@ import tools.jackson.databind.ObjectMapper;
 class LoginLockoutIT {
 
     private static final String LOGIN = "lockout-subject";
+
+    /** A second account that never activated. Item 35. */
+    private static final String DORMANT_LOGIN = "dormant-item35";
     private static final String PASSWORD = "correct-horse";
 
     @Autowired
@@ -47,6 +50,7 @@ class LoginLockoutIT {
     @BeforeEach
     void setUp() {
         userRepository.findOneByLogin(LOGIN).flatMap(userRepository::delete).block();
+        userRepository.findOneByLogin(DORMANT_LOGIN).flatMap(userRepository::delete).block();
         User user = new User();
         user.setLogin(LOGIN);
         user.setEmail(LOGIN + "@example.com");
@@ -95,6 +99,45 @@ class LoginLockoutIT {
 
         assertThat(new String(lockedBody == null ? new byte[0] : lockedBody)).isEqualTo(
             new String(unknownBody == null ? new byte[0] : unknownBody)
+        );
+    }
+
+    /**
+     * Item 35. A never-activated account must answer exactly what a wrong password answers.
+     *
+     * <p>This asserts INDISTINGUISHABILITY, not {@code isUnauthorized()}, and the difference is the whole
+     * point. "Is 401" would keep passing on the day a later change moved the wrong-password response
+     * somewhere else, leaving the two divergent again with a green test over it. The property being
+     * defended is that the two responses cannot be told apart, so the two responses are what is
+     * compared.</p>
+     *
+     * <p>Before the fix this failed on the status alone: the unactivated path answered <b>500</b>, which
+     * is an account-state oracle that needs no body-reading at all — and it defeated
+     * {@link #theLockedResponseIsIndistinguishableFromAWrongPassword} by going round it, since that test
+     * only ever compared the locked and unknown-account answers to each other.</p>
+     */
+    @Test
+    void theUnactivatedResponseIsIndistinguishableFromAWrongPassword() {
+        User dormant = new User();
+        dormant.setLogin(DORMANT_LOGIN);
+        dormant.setEmail(DORMANT_LOGIN + "@example.com");
+        dormant.setActivated(false);
+        dormant.setPassword(passwordEncoder.encode(PASSWORD));
+        userRepository.save(dormant).block();
+
+        // The CORRECT password against an unactivated account. Using a wrong one would pass for the
+        // wrong reason: it would be rejected as bad credentials before activation was ever consulted.
+        byte[] unactivatedBody = attemptAs(DORMANT_LOGIN, PASSWORD)
+            .expectStatus()
+            .isUnauthorized()
+            .expectBody()
+            .returnResult()
+            .getResponseBody();
+
+        byte[] wrongPasswordBody = attempt("wrong-password").expectStatus().isUnauthorized().expectBody().returnResult().getResponseBody();
+
+        assertThat(new String(unactivatedBody == null ? new byte[0] : unactivatedBody)).isEqualTo(
+            new String(wrongPasswordBody == null ? new byte[0] : wrongPasswordBody)
         );
     }
 
