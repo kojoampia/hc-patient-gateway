@@ -8,6 +8,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import net.jojoaddison.security.UserNotActivatedException;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
@@ -228,6 +229,19 @@ public class ExceptionTranslator extends ResponseEntityExceptionHandler implemen
         if (err instanceof ConcurrencyFailureException) return HttpStatus.CONFLICT;
         if (err instanceof BadCredentialsException) return HttpStatus.UNAUTHORIZED;
         if (err instanceof UsernameNotFoundException) return HttpStatus.UNAUTHORIZED;
+        // Item 35. UNMAPPED UNTIL 2026-09-11, AND THE OMISSION WAS AN ORACLE, NOT A COSMETIC SLIP.
+        // UserNotActivatedException is an AuthenticationException like the two above and was reaching
+        // Spring's default, so signing in to an account whose activation mail had not been clicked
+        // answered 500 -- while the body still read "Unauthorized" / "Invalid credentials", so the
+        // status and the payload disagreed and the payload was the one that looked right.
+        //
+        // The enumeration cost is the reason this is here rather than in a tidy-up. AuthenticateController
+        // deliberately answers a LOCKED account with the same 401 a wrong password gets, reasoning in
+        // place that saying "locked" would confirm the account exists; LoginLockoutIT pins it. But an
+        // unactivated account answered 500 where every other rejection answered 401, so the response
+        // distinguished itself without the body being read at all. The defence was complete on the paths
+        // somebody thought about and open on the one nobody mapped.
+        if (err instanceof UserNotActivatedException) return HttpStatus.UNAUTHORIZED;
         return null;
     }
 
