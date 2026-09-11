@@ -162,3 +162,9 @@ Desktop.ini
 # Never commit a real credential here again. The copy tracked at this path from 2024-03-30
 # until 2026-09-01 held live SMTP and registry passwords, identical across five repositories.
 src/main/docker/.env
+
+# Agent worktrees: created at .claude/worktrees/agent-*/ INSIDE the repo, so every tool that
+# walks from the root sees them. deploy.sh read one as "uncommitted changes ... NONE of them ship"
+# on a production deploy — false, and indistinguishable from the real thing it warns about.
+# Only the transient part: .claude/agents and settings.json stay committable.
+.claude/worktrees/
