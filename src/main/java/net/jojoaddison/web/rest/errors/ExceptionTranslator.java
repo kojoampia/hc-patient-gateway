@@ -250,6 +250,45 @@ public class ExceptionTranslator extends ResponseEntityExceptionHandler implemen
         return request.getRequest().getURI();
     }
 
+    /**
+     * Puts the failure-alert headers back on a {@link BadRequestAlertException}. The reactive half of
+     * backlog item 41; the api carries the servlet twin of this method.
+     *
+     * <p>{@code handleAnyException} calls {@link #buildHeaders} and <b>never runs for this family</b>.
+     * {@code BadRequestAlertException} extends {@link ErrorResponseException}, for which
+     * {@code ResponseEntityExceptionHandler} declares a handler <em>more specific</em> than this advice's
+     * {@code @ExceptionHandler(Throwable)}. Spring dispatches there and answers with the exception's own
+     * headers — a permanently empty {@code HttpHeaders} with no setter. The alert headers were built and
+     * discarded on every refused write.</p>
+     *
+     * <p><b>The reactive signature is not the servlet one and was checked rather than assumed.</b> Here it
+     * returns {@code Mono<ResponseEntity<Object>>} and takes a {@code ServerWebExchange}; the api's takes a
+     * {@code WebRequest} and returns the {@code ResponseEntity} directly. Copying the servlet shape across
+     * compiles into an overload rather than an override — which fails silently, because an unmatched
+     * {@code @Override}-less method simply never runs. The {@code @Override} annotation is what makes that
+     * a compile error instead of a mystery.</p>
+     *
+     * <p>An override rather than a second {@code @ExceptionHandler}: competing for dispatch is what broke
+     * this in the first place. {@code handleException} is {@code final}, so this protected seam is the
+     * framework's own answer — one dispatch path, not two.</p>
+     */
+    @Override
+    protected Mono<ResponseEntity<Object>> handleErrorResponseException(
+        ErrorResponseException ex,
+        HttpHeaders headers,
+        HttpStatusCode statusCode,
+        ServerWebExchange request
+    ) {
+        HttpHeaders alertHeaders = buildHeaders(ex);
+        if (alertHeaders == null) return super.handleErrorResponseException(ex, headers, statusCode, request);
+        // A copy rather than a mutation of either argument: the alert headers belong to this response, not
+        // to the exception instance. The parameter is documented @Nullable on the reactive side.
+        HttpHeaders merged = new HttpHeaders();
+        if (headers != null) merged.putAll(headers);
+        merged.putAll(alertHeaders);
+        return super.handleErrorResponseException(ex, merged, statusCode, request);
+    }
+
     private HttpHeaders buildHeaders(Throwable err) {
         return err instanceof BadRequestAlertException badRequestAlertException
             ? HeaderUtil.createFailureAlert(

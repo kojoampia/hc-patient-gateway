@@ -1,5 +1,7 @@
 package net.jojoaddison.web.rest.errors;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import net.jojoaddison.IntegrationTest;
 import org.hamcrest.core.AnyOf;
 import org.hamcrest.core.IsEqual;
@@ -21,6 +23,47 @@ class ExceptionTranslatorIT {
 
     @Autowired
     private WebTestClient webTestClient;
+
+    /**
+     * Item 41, reactive half. A refused write must carry the failure-alert headers; until 2026-09-16 it
+     * carried none, here and in the api alike.
+     *
+     * <p>This asserts the HEADERS, not the status or the body — both of which were always correct, which is
+     * why every other test in this class passed throughout. It matches by SUFFIX, mirroring what
+     * {@code notification.interceptor.ts} actually does, so it cannot pass while the console still sees
+     * nothing because a {@code clientApp.name} drifted.</p>
+     */
+    @Test
+    void aRefusedWriteCarriesTheFailureAlertHeaders() {
+        var response = webTestClient
+            .get()
+            .uri("/api/exception-translator-test/refused-write")
+            .exchange()
+            .expectStatus()
+            .isBadRequest()
+            .returnResult(String.class);
+
+        var names = response.getResponseHeaders().headerNames().stream().map(String::toLowerCase).toList();
+        assertThat(names)
+            .as("the console matches on this suffix; a refusal that sets none is invisible to it")
+            .anyMatch(n -> n.endsWith("app-error"));
+        assertThat(names).anyMatch(n -> n.endsWith("app-params"));
+        assertThat(
+            response
+                .getResponseHeaders()
+                .getOrEmpty(
+                    response
+                        .getResponseHeaders()
+                        .headerNames()
+                        .stream()
+                        .filter(n -> n.toLowerCase().endsWith("app-params"))
+                        .findFirst()
+                        .orElse("")
+                )
+        )
+            .as("the params header must name the entity the write was refused for")
+            .containsExactly("widget");
+    }
 
     @Test
     void testConcurrencyFailure() {

@@ -12,6 +12,12 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/exception-translator-test")
 public class ExceptionTranslatorTestController {
 
+    /** Item 41: the refusal path that must carry alert headers. */
+    @GetMapping("/refused-write")
+    public void refusedWrite() {
+        throw new BadRequestAlertException("a refused write", "widget", "widgetrefused");
+    }
+
     @GetMapping("/concurrency-failure")
     public void concurrencyFailure() {
         throw new ConcurrencyFailureException("test concurrency failure");
