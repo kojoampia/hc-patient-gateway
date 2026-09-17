@@ -12,10 +12,30 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/exception-translator-test")
 public class ExceptionTranslatorTestController {
 
-    /** Item 41: the refusal path that must carry alert headers. */
+    /** Item 41: the refusal path that must carry alert headers. Item 48 reads its body. */
     @GetMapping("/refused-write")
     public void refusedWrite() {
         throw new BadRequestAlertException("a refused write", "widget", "widgetrefused");
+    }
+
+    /**
+     * Item 48. The other web-layer refusal built on {@link org.springframework.web.ErrorResponseException} — and the
+     * one that matters most, because it carries no {@code message} key at all, so {@code detail} is the only text a
+     * client has to show.
+     */
+    @GetMapping("/invalid-password")
+    public void invalidPassword() {
+        throw new InvalidPasswordException();
+    }
+
+    /**
+     * Item 48, the register family. A <em>service</em>-layer exception that {@code ExceptionTranslator} answers by
+     * substituting the web-layer twin's body. This is the path {@code POST /api/register} takes for a taken login,
+     * and it is here so the fix to the family above can be shown not to have moved it.
+     */
+    @GetMapping("/login-already-used")
+    public void loginAlreadyUsed() {
+        throw new net.jojoaddison.service.UsernameAlreadyUsedException();
     }
 
     @GetMapping("/concurrency-failure")

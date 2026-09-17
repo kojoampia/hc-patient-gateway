@@ -65,6 +65,96 @@ class ExceptionTranslatorIT {
             .containsExactly("widget");
     }
 
+    /**
+     * Item 48. {@code detail} is the RFC 7807 field meant to be human-readable, and it is the one a generic error
+     * component falls back to when it has no translation for {@code message}. Until 2026-09-17 it carried the
+     * exception's {@code toString()} — {@code "400 BAD_REQUEST, ProblemDetailWithCause[…detail='null'…]"}, a Java
+     * type name rendered at a patient, on every refused write in the product.
+     *
+     * <p>Asserted by equality rather than by "does not start with 400", deliberately: the defect is not that the
+     * old string was ugly, it is that the thrown message was nowhere in the response at all.</p>
+     *
+     * <p>It also asserts the alert header's <b>value</b>, which item 41's test above does not. The fix fills the
+     * body's {@code detail}, and {@code ErrorResponseException.getMessage()} renders the body — which is the
+     * string {@code buildHeaders} hands to {@code HeaderUtil.createFailureAlert} as its {@code defaultMessage}.
+     * That argument is discarded today because translation is enabled (verified in
+     * {@code jhipster-framework-9.0.0-sources.jar}: {@code enableTranslation ? "error." + errorKey :
+     * defaultMessage}), so the two items do not interact. Flip that flag and they would, silently, putting a
+     * stringified Java object in a response header — hence pinning it here rather than in a report.</p>
+     */
+    @Test
+    void aRefusedWriteDetailCarriesTheThrownMessage() {
+        var response = webTestClient
+            .get()
+            .uri("/api/exception-translator-test/refused-write")
+            .exchange()
+            .expectStatus()
+            .isBadRequest()
+            .expectBody()
+            .jsonPath("$.detail")
+            .isEqualTo("a refused write")
+            .returnResult();
+
+        var errorHeader = response
+            .getResponseHeaders()
+            .headerNames()
+            .stream()
+            .filter(n -> n.toLowerCase().endsWith("app-error"))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("item 41's alert header is gone"));
+        assertThat(response.getResponseHeaders().getOrEmpty(errorHeader))
+            .as("filling the body's detail must not leak the rendered body into the header item 41 put back")
+            .containsExactly("error.widgetrefused");
+    }
+
+    /**
+     * Item 48, the same defect on the refusal that has no {@code message} key to fall back from. A password too
+     * short for the policy answered with {@code message: "error.http.400"} and a stringified
+     * {@code ProblemDetailWithCause} as its only prose — on {@code POST /api/account/reset-password/finish}, a
+     * screen a patient reaches alone and unauthenticated.
+     */
+    @Test
+    void anInvalidPasswordDetailCarriesTheThrownMessage() {
+        webTestClient
+            .get()
+            .uri("/api/exception-translator-test/invalid-password")
+            .exchange()
+            .expectStatus()
+            .isBadRequest()
+            .expectBody()
+            .jsonPath("$.detail")
+            .isEqualTo("Incorrect password");
+    }
+
+    /**
+     * Item 48, the register family — <b>a pin, not a repair</b>. This passed before the fix and passes after it,
+     * and that is the whole point: {@code POST /api/register} already answered a taken login with a readable
+     * {@code detail}, by a different route (the translator substitutes {@link LoginAlreadyUsedException}'s body for
+     * the service-layer exception's). The two families' {@code defaultMessage} and service message are
+     * byte-identical, so pre-filling the body's {@code detail} leaves this response unchanged — this asserts that
+     * rather than assuming it.
+     *
+     * <p>What this test does <em>not</em> pin is the other half of the inversion: this family still carries no
+     * alert headers, because the object reaching {@code buildHeaders} is the service exception. That is item 48's
+     * undecided question and is deliberately untouched here.</p>
+     */
+    @Test
+    void theRegisterFamilyKeepsTheDetailItAlreadyHad() {
+        webTestClient
+            .get()
+            .uri("/api/exception-translator-test/login-already-used")
+            .exchange()
+            .expectStatus()
+            .isBadRequest()
+            .expectBody()
+            .jsonPath("$.detail")
+            .isEqualTo("Login name already used!")
+            .jsonPath("$.message")
+            .isEqualTo("error.userexists")
+            .jsonPath("$.type")
+            .isEqualTo(ErrorConstants.LOGIN_ALREADY_USED_TYPE.toString());
+    }
+
     @Test
     void testConcurrencyFailure() {
         webTestClient

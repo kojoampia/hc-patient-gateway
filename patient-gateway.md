@@ -10,6 +10,59 @@ Status legend: `[x]` done · `[~]` partial / diverges from plan · `[ ]` not sta
 
 ## What changed since the last baseline
 
+### A refused write's `detail` carries the thrown message (2026-09-17 — `docs/backlog.md` item 48, first half)
+
+`[~]` — **the body half is closed, the headers half is deliberately not.** Item 48 has two clauses and this
+delivers one of them.
+
+- **What was wrong.** `ExceptionTranslator.customizeProblem` fills a null `detail` from
+  `getCustomizedErrorDetails`, which ends at `err.getMessage()` — and
+  `ErrorResponseException.getMessage()` is `"<status>, <body>"`. So every web-layer refusal answered with a
+  rendering of the object that should have carried the message, nested `detail='null'` and all, while the
+  thrown message reached the client nowhere. The `title` the constructor put it in does not survive either:
+  `customizeProblem` overwrites the title with the status reason phrase a few statements before it looks at
+  the detail.
+- **The fix is at construction, not in the translator**, because that is where `defaultMessage` is still
+  known. One `withDetail(...)` in `BadRequestAlertException` and one in `InvalidPasswordException`;
+  `ExceptionTranslator` is untouched, so item 41's override is not disturbed.
+- **`InvalidPasswordException` is in scope even though it is not a `BadRequestAlertException`**, and it is the
+  instance that reaches a patient soonest. It sets no `message` property at all, so the body carried
+  `message: "error.http.400"` with no key to translate and `detail` was the only prose in the response —
+  measured on quality at `81277b9` through `POST /api/account/reset-password/finish`, which is public,
+  unauthenticated, and reached by somebody already locked out of their account.
+- **Why `detail` and not just `message`.** `alert-error.component.ts` calls
+  `addErrorAlert(error.detail ?? error.message, error.message, error.params)` — the first argument is the text
+  shown when the key has no translation. The dump was therefore rendered **precisely on the path taken when
+  something else had already gone wrong**, which is why nobody saw it: `message` and `params` were always
+  correct, so a client with the key showed the right thing.
+- **The register family was measured, not assumed, and is unchanged.** `POST /api/register` answers a taken
+  login by a different route — the translator substitutes `LoginAlreadyUsedException`'s **body** for the
+  service-layer exception. The two layers' strings are byte-identical (`"Login name already used!"`,
+  `"Email is already in use!"`, `"Incorrect password"`), so pre-filling `detail` leaves that response
+  identical. `theRegisterFamilyKeepsTheDetailItAlreadyHad` pins it; it passed before this change and after,
+  and is a regression pin rather than a repair.
+
+**What is deliberately left, and it is the other clause of "done when".** The two refusal families still
+decide their shape by which layer threw: registration carries no `X-patientGatewayApp-*` headers, because the
+object reaching `buildHeaders` is the service exception and item 41's override correctly declines. Closing it
+means throwing `LoginAlreadyUsedException` from the registration path, which **adds two headers to a public
+error contract** — a cross-product move, and item 48 files it as undecided.
+
+Measured who reads that contract today, so the decision is not blocked on the question: `web`'s
+`register.component.ts` dispatches on `error.type`, `mobile`'s `register.page.ts` on `error.errorKey`,
+hc-admin has no self-registration and its `PatientServiceClient` discards error bodies
+(`onStatus(isError, (req, res) -> {})`) and reads only the status. **Nothing reads `detail`, and nothing
+depends on the headers being absent** — so the change looks safe, and it is still the architect's to take.
+
+**What this fix cannot catch:** a `defaultMessage` that is itself unhelpful or untranslated — `detail` is
+English at the point of throw and nothing translates it; the alert-header branch of
+`alert-error.component.ts`, which fires first when headers are present and never reads `detail` at all, so
+the web console was never the surface showing the dump; and anything about the api's servlet twin of these
+classes, which is not this repo's to fix. **That twin is broken and it was measured rather than inferred** —
+`POST /services/hcpatientservice/api/profiles` with an id, against quality at `81277b9`, answers
+`detail: "400 BAD_REQUEST, ProblemDetailWithCause[…properties='{message=error.idexists, params=patientServiceProfile}']"`.
+Item 41 needed a servlet half and so does this; it wants its own backlog row.
+
 ### The message catalogues are held to their own encoding (2026-09-17 — `docs/backlog.md` item 42)
 
 Raised from hc-admin, which shipped a **double-encoded** German catalogue and fixed it. Nothing was broken
