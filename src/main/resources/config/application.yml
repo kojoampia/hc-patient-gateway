@@ -281,6 +281,14 @@ spring:
     enabled: false
   messages:
     basename: i18n/messages
+    # Belt and braces, NOT the fix for anything broken today: MessageSourceProperties already
+    # initialises `encoding` to StandardCharsets.UTF_8, so this line changes no observed behaviour.
+    # It is here so the catalogues stop depending on a framework default nobody declared, and so a
+    # Boot upgrade that changed that default would not silently re-decode 46 accented values.
+    # What actually holds the catalogues correct is MessageCatalogueEncodingUnitTest, which asserts
+    # the bytes on disk round-trip through this setting — a property set to the right value cannot
+    # protect a file that was already double-encoded when it was written.
+    encoding: UTF-8
   main:
     allow-bean-definition-overriding: true
   webflux:

@@ -10,6 +10,45 @@ Status legend: `[x]` done · `[~]` partial / diverges from plan · `[ ]` not sta
 
 ## What changed since the last baseline
 
+### The message catalogues are held to their own encoding (2026-09-17 — `docs/backlog.md` item 42)
+
+Raised from hc-admin, which shipped a **double-encoded** German catalogue and fixed it. Nothing was broken
+here: all four catalogues are UTF-8 with real accents, 20 values in German and 26 in French. What was missing
+was the thing that keeps them that way — `MessageCatalogueEncodingUnitTest`.
+
+- **`spring.messages.encoding: UTF-8` is belt and braces and is not the fix.** Boot's
+  `MessageSourceProperties` already initialises `encoding` to `StandardCharsets.UTF_8` in its constructor, so
+  the line changes no observed behaviour today. It is worth setting — an implicit dependency on a framework
+  default becomes an explicit one, and a Boot upgrade that moved that default would not silently re-decode 46
+  accented values — but the item's premise that the absence of this property is what leaves the catalogues
+  exposed is **wrong**, and hc-admin's own defect proves it: the bytes on disk were already corrupt, and no
+  value of this property would have helped. **Do not "strengthen" this by asserting the property is set.** That
+  assertion passes forever and protects nothing.
+- **The hazard is double-encoding, which is invisible to every check that was here.** UTF-8 bytes read back as
+  Latin-1 and re-saved are still valid UTF-8: the file parses, the mail sends, the build is green, and a German
+  patient reads `Ihr LÃ¶schantrag ist bei uns eingegangen`. There is no U+FFFD to find, which is what the
+  pre-existing `MailServiceIT#theGermanBundleIsUtf8AndKeepsItsUmlauts` looks for. **Measured, not inferred:**
+  with `email.deletion.requested.title` planted double-encoded, that test and the other twelve in the class
+  pass 13/13.
+- **An integration test cannot do this job, and the reason is a trap.** `src/test/resources/i18n/` deliberately
+  shadows the real bundles on the test classpath — its own comment says so — so the autowired `MessageSource`
+  resolves _fixture_ wording under `@IntegrationTest`. The guard is therefore a unit test that builds the same
+  `ResourceBundleMessageSource` Boot builds, over a classloader rooted at `src/main/resources` alone, taking
+  its basename and encoding **out of the shipped `application.yml`** rather than restating them. Point the
+  configuration at ISO-8859-1 and the guard goes red; that is the only thing the new property line can do.
+- **Reach is derived, never listed:** every `messages*.properties` in the bundle directory, and every key whose
+  value carries a non-ASCII character. Four catalogues today, French included, with no named subset and nothing
+  for anyone to remember when a locale or an accent is added. A structural check asserts the sweep found at
+  least one accented `*.title` — a subject line — so a derivation that silently returned nothing fails rather
+  than passes.
+- **The detector carries its own positive control.** `theDetectorCanProduceAPositiveOnThisProductsOwnWording`
+  takes a value that really ships, double-encodes it in memory, and asserts the detector says so — because a
+  negative result means nothing until the probe has been shown to produce a positive one.
+
+**What it still cannot catch:** a _correct_ translation that is wrong, a key missing from a catalogue (that is
+`DeletionMailRenderingIT`'s `??key??` assertion), and anything about what the relay or the recipient's client
+does with a correctly encoded header.
+
 ### Registrations and sign-ins are counted, by outcome (2026-09-10 — `docs/backlog.md` item 34)
 
 The gateway half of the dashboard the architect asked for. **This repo owns the meters only**; the Grafana

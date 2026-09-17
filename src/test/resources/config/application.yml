@@ -103,6 +103,10 @@ spring:
     allow-bean-definition-overriding: true
   messages:
     basename: i18n/messages
+    # Mirrored from src/main/resources/config/application.yml. This file REPLACES that one on the
+    # test classpath rather than merging with it, so anything set only there is set for production
+    # and for nothing any test can see.
+    encoding: UTF-8
   task:
     execution:
       thread-name-prefix: patient-gateway-task-
