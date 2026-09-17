@@ -22,6 +22,11 @@ public class BadRequestAlertException extends ErrorResponseException {
     /**
      * @param defaultMessage the human-readable reason for the refusal. It fills <b>both</b> {@code title} and
      *     {@code detail} — see the note below on why {@code detail} is set here rather than left to the translator.
+     *     <p><b>It must be a fixed literal that is safe to appear in a response body</b>, never an interpolated
+     *     value and never another exception's message. Setting {@code detail} at construction bypasses
+     *     {@code ExceptionTranslator}'s production scrubber: the branch that replaces a message containing a
+     *     package name with {@code "Unexpected runtime exception"} only runs when {@code detail} is still null.
+     *     Every construction site in this repository passes a literal, which is what makes that safe here.</p>
      */
     public BadRequestAlertException(URI type, String defaultMessage, String entityName, String errorKey) {
         super(

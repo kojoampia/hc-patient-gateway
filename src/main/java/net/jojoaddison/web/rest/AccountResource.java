@@ -85,6 +85,21 @@ public class AccountResource {
         }
         return userService
             .registerUser(managedUserVM, managedUserVM.getPassword(), HandoffSource.recognised(managedUserVM.getSource()))
+            // Backlog item 48, the headers half. UserService signals a taken login or address with its own
+            // service-layer exceptions, and ExceptionTranslator special-cases them by substituting the web twin's
+            // BODY -- while the object that reaches buildHeaders is still the service exception, which is not a
+            // BadRequestAlertException, so item 41's override correctly declines and no alert header is set.
+            //
+            // The result was that the two refusal families were inverted: registration answered with a readable
+            // body and no headers, every other refused write with headers and an unreadable body. Neither is what
+            // the console assumes, and registration was the one refusal it could not see at all.
+            //
+            // Translated here rather than thrown from UserService because TechnicalStructureTest forbids it:
+            // "Web" may only be accessed by "Config", so the service layer cannot name web.rest.errors. The
+            // boundary is the right place for it anyway -- this is where a service-layer failure becomes an HTTP
+            // answer, and the javadoc above has always claimed these two types.
+            .onErrorMap(net.jojoaddison.service.UsernameAlreadyUsedException.class, cause -> new LoginAlreadyUsedException())
+            .onErrorMap(net.jojoaddison.service.EmailAlreadyUsedException.class, cause -> new EmailAlreadyUsedException())
             .doOnSuccess(mailService::sendActivationEmail)
             .doOnSuccess(
                 user ->

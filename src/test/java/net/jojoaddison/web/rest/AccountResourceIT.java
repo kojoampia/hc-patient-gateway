@@ -14,6 +14,7 @@ import net.jojoaddison.security.AuthoritiesConstants;
 import net.jojoaddison.service.UserService;
 import net.jojoaddison.service.dto.AdminUserDTO;
 import net.jojoaddison.service.dto.PasswordChangeDTO;
+import net.jojoaddison.web.rest.errors.ErrorConstants;
 import net.jojoaddison.web.rest.vm.KeyAndPasswordVM;
 import net.jojoaddison.web.rest.vm.ManagedUserVM;
 import org.apache.commons.lang3.RandomStringUtils;
@@ -287,6 +288,157 @@ class AccountResourceIT {
         invalidUser.setLangKey(Constants.DEFAULT_LANGUAGE);
         invalidUser.setAuthorities(Set.of(AuthoritiesConstants.USER));
         return invalidUser;
+    }
+
+    /**
+     * Item 48, the headers half. Registration used to be the one refusal in the product that answered with no
+     * {@code X-patientGatewayApp-*} headers, because {@code UserService} threw a <em>service</em>-layer
+     * {@code UsernameAlreadyUsedException} and {@code ExceptionTranslator} substituted the web twin's
+     * <b>body</b> while {@code buildHeaders} still saw the service exception and declined. The two refusal
+     * families were inverted: registration had the readable body and no headers, everything else had the
+     * headers and an unreadable body.
+     *
+     * <p><b>The body is asserted alongside the headers, and that is the point of the test rather than
+     * thoroughness.</b> The risk in this change is not that the headers fail to appear, it is that moving which
+     * exception is thrown moves the fields clients already dispatch on — `web`'s {@code register.component.ts}
+     * branches on {@code error.type}, so a changed {@code type} would silently stop a taken login from being
+     * reported as one. Both are pinned here at the producing end.</p>
+     *
+     * <p><b>What this deliberately does not assert</b> is what a patient then sees. That is a claim about
+     * `hc-patient/web`'s alert component in another repository, and the only way to make it here would be to
+     * mock the body this gateway produces — which is the exact failure mode found in `mobile`'s
+     * {@code account-flows.spec.ts}, where a fixture invented an {@code errorKey} field the gateway has never
+     * sent and the spec passed on it for months. A test that asserts its own fixture is not evidence.</p>
+     */
+    @Test
+    void aDuplicateRegistrationCarriesTheFailureAlertHeaders() throws Exception {
+        ManagedUserVM firstUser = new ManagedUserVM();
+        firstUser.setLogin("item48-taken-login");
+        firstUser.setPassword("password");
+        firstUser.setFirstName("Item");
+        firstUser.setLastName("FortyEight");
+        firstUser.setEmail("item48-taken-login@example.com");
+        firstUser.setLangKey(Constants.DEFAULT_LANGUAGE);
+        firstUser.setAuthorities(Set.of(AuthoritiesConstants.USER));
+
+        accountWebTestClient
+            .post()
+            .uri("/api/register")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(om.writeValueAsBytes(firstUser))
+            .exchange()
+            .expectStatus()
+            .isCreated();
+
+        // Activated, because UserService deletes and replaces an unactivated account of the same login rather
+        // than refusing it -- an unactivated duplicate answers 201 and would prove nothing.
+        User registered = userRepository.findOneByLogin("item48-taken-login").blockOptional().orElseThrow();
+        registered.setActivated(true);
+        userRepository.save(registered).block();
+
+        ManagedUserVM duplicate = new ManagedUserVM();
+        duplicate.setLogin(firstUser.getLogin());
+        duplicate.setPassword(firstUser.getPassword());
+        duplicate.setFirstName(firstUser.getFirstName());
+        duplicate.setLastName(firstUser.getLastName());
+        duplicate.setEmail("item48-different-address@example.com");
+        duplicate.setLangKey(firstUser.getLangKey());
+        duplicate.setAuthorities(new HashSet<>(firstUser.getAuthorities()));
+
+        var response = accountWebTestClient
+            .post()
+            .uri("/api/register")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(om.writeValueAsBytes(duplicate))
+            .exchange()
+            .expectStatus()
+            .isBadRequest()
+            .expectBody()
+            .jsonPath("$.detail")
+            .isEqualTo("Login name already used!")
+            .jsonPath("$.message")
+            .isEqualTo("error.userexists")
+            .jsonPath("$.params")
+            .isEqualTo("userManagement")
+            .jsonPath("$.type")
+            .isEqualTo(ErrorConstants.LOGIN_ALREADY_USED_TYPE.toString())
+            .returnResult();
+
+        assertThat(alertHeader(response.getResponseHeaders(), "app-error"))
+            .as("registration was the one refusal the console could not see")
+            .containsExactly("error.userexists");
+        assertThat(alertHeader(response.getResponseHeaders(), "app-params")).containsExactly("userManagement");
+    }
+
+    /** Item 48. The same, for the address rather than the login — a second family, a second substituted body. */
+    @Test
+    void aDuplicateEmailRegistrationCarriesTheFailureAlertHeaders() throws Exception {
+        ManagedUserVM firstUser = new ManagedUserVM();
+        firstUser.setLogin("item48-first-holder");
+        firstUser.setPassword("password");
+        firstUser.setFirstName("Item");
+        firstUser.setLastName("FortyEight");
+        firstUser.setEmail("item48-taken-address@example.com");
+        firstUser.setLangKey(Constants.DEFAULT_LANGUAGE);
+        firstUser.setAuthorities(Set.of(AuthoritiesConstants.USER));
+
+        accountWebTestClient
+            .post()
+            .uri("/api/register")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(om.writeValueAsBytes(firstUser))
+            .exchange()
+            .expectStatus()
+            .isCreated();
+
+        User registered = userRepository.findOneByLogin("item48-first-holder").blockOptional().orElseThrow();
+        registered.setActivated(true);
+        userRepository.save(registered).block();
+
+        ManagedUserVM duplicate = new ManagedUserVM();
+        duplicate.setLogin("item48-second-holder");
+        duplicate.setPassword(firstUser.getPassword());
+        duplicate.setFirstName(firstUser.getFirstName());
+        duplicate.setLastName(firstUser.getLastName());
+        duplicate.setEmail(firstUser.getEmail());
+        duplicate.setLangKey(firstUser.getLangKey());
+        duplicate.setAuthorities(new HashSet<>(firstUser.getAuthorities()));
+
+        var response = accountWebTestClient
+            .post()
+            .uri("/api/register")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(om.writeValueAsBytes(duplicate))
+            .exchange()
+            .expectStatus()
+            .isBadRequest()
+            .expectBody()
+            .jsonPath("$.detail")
+            .isEqualTo("Email is already in use!")
+            .jsonPath("$.message")
+            .isEqualTo("error.emailexists")
+            .jsonPath("$.type")
+            .isEqualTo(ErrorConstants.EMAIL_ALREADY_USED_TYPE.toString())
+            .returnResult();
+
+        assertThat(alertHeader(response.getResponseHeaders(), "app-error")).containsExactly("error.emailexists");
+        assertThat(alertHeader(response.getResponseHeaders(), "app-params")).containsExactly("userManagement");
+    }
+
+    /**
+     * Matched by suffix rather than by the literal {@code X-patientGatewayApp-} prefix, mirroring what
+     * {@code alert-error.component.ts} does — so these cannot pass while the console still sees nothing because
+     * {@code jhipster.clientApp.name} drifted.
+     */
+    private static List<String> alertHeader(org.springframework.http.HttpHeaders headers, String suffix) {
+        return headers.getOrEmpty(
+            headers
+                .headerNames()
+                .stream()
+                .filter(name -> name.toLowerCase().endsWith(suffix))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("no header ending in " + suffix + "; the refusal is invisible to the console"))
+        );
     }
 
     @Test
