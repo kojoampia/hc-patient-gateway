@@ -101,19 +101,21 @@ public class AccountResource {
             .onErrorMap(net.jojoaddison.service.UsernameAlreadyUsedException.class, cause -> new LoginAlreadyUsedException())
             .onErrorMap(net.jojoaddison.service.EmailAlreadyUsedException.class, cause -> new EmailAlreadyUsedException())
             .doOnSuccess(mailService::sendActivationEmail)
-            .doOnSuccess(user ->
-                events.publish(
-                    PatientEventType.ACCOUNT_CREATED,
-                    mutationItem56(user), // MUTATION item 56 — one call site only
-                    Map.of(
-                        "authorities",
-                        user.getAuthorities().stream().map(a -> a.getName()).sorted().collect(Collectors.joining(",")),
-                        "langKey",
-                        String.valueOf(user.getLangKey()),
-                        "activated",
-                        user.isActivated()
+            .doOnSuccess(
+                user ->
+                    events.publish(
+                        PatientEventType.ACCOUNT_CREATED,
+                        user,
+                        Map.of(
+                            "authorities",
+                            user.getAuthorities().stream().map(a -> a.getName()).sorted().collect(Collectors.joining(",")),
+                            "langKey",
+                            String.valueOf(user.getLangKey()),
+                            "activated",
+                            user.isActivated()
+                        )
                     )
-                ))
+            )
             .then();
     }
 
@@ -276,14 +278,6 @@ public class AccountResource {
             return Mono.empty();
         }
         return tokenRevocationService.revoke(jwt.getId(), jwt.getExpiresAt());
-    }
-
-    // MUTATION item 56: an account with everything but the id.
-    private static net.jojoaddison.domain.User mutationItem56(net.jojoaddison.domain.User user) {
-        net.jojoaddison.domain.User idless = new net.jojoaddison.domain.User();
-        idless.setLogin(user.getLogin());
-        idless.setEmail(user.getEmail());
-        return idless;
     }
 
     private static boolean isPasswordLengthInvalid(String password) {
