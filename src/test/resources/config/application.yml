@@ -36,7 +36,30 @@ spring:
     gateway:
       server:
         webflux:
+          # Mirrored from the main application.yml, which this file REPLACES WHOLESALE. The value
+          # equals the framework default, so MembershipStreamRouteIT would pass without it — which is
+          # precisely why it is mirrored rather than left out: the two files must agree, or the next
+          # person reads a difference as a decision. See the main file for what that test can and
+          # cannot see.
+          streaming-media-types:
+            - text/event-stream
+            - application/stream+json
           routes:
+            # Mirrored from the main application.yml. The route itself is unreachable here — there is
+            # no hcpatientservice to load-balance to and Consul is disabled — but its METADATA is what
+            # the test reads, and metadata declared only in the main file is metadata no test can see.
+            # Backlog item 39.
+            - id: hcpatientservice-membership-stream
+              uri: lb://hcpatientservice
+              order: -1
+              predicates:
+                - Path=/services/hcpatientservice/api/membership-events
+              filters:
+                - StripPrefix=2
+              metadata:
+                # -1 is "no response timeout for this route". See the main file for why a stream that
+                # inherits the gateway's default is cut with a 504 a client reads as a dead network.
+                response-timeout: -1
             - id: abofonsa-plans
               uri: ${abofonsa.base-url:https://web.abofonsa.com}
               predicates:
