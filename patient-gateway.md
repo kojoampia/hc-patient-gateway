@@ -10,6 +10,40 @@ Status legend: `[x]` done · `[~]` partial / diverges from plan · `[ ]` not sta
 
 ## What changed since the last baseline
 
+### The account events name the account, and the subject's third component is now `accountId` (2026-09-18 — `docs/backlog.md` item 56)
+
+`[x]` — **all four clauses.** hc-admin's item 115 is blocked on this and their `Patient.accountId` is
+`@NotNull`, so until now every `AccountCreated` — the first frame of every new patient — would have
+dead-lettered on their side with both stacks healthy and the consumer group at lag zero.
+
+- **It was not a forgotten argument, it was a missing one.** `publish(type, email, login, data)` built
+  `new PatientEvent.Subject(key, login, null)`. Four parameters and a hardcoded `null`: no call site could have
+  supplied an id, so _every_ event this service had ever published was structurally id-less. Only the gateway can
+  close it — it mints the `User`, holds the `User.id`, and publishes registration; the api runs
+  `skipUserManagement`, the JWT carries no id, and the gateway never calls the api.
+- **The signature now takes the `User`**, not three loose strings. That is what makes "every event carries the
+  account id" a property of the signature rather than of the four call sites that happened to be audited: a fifth
+  call site cannot compile without an account in hand, and the id, email and login cannot disagree about who the
+  event is about. `theOnlyWayToPublishIsWithAnAccount` pins that there is exactly one `publish` and that it takes
+  a `User`.
+- **⚠ The wire field is renamed, and the rename is the point.** The gateway's subject is now
+  `{email, login, accountId}`; `hc-patient-service`'s copy of the record still sends `{email, login, patientId}`
+  and keeps it until its item 54. **Both identifiers are on `patient-events` at once and only the field name tells
+  them apart.** Overloading the old name would have been worse than the gap it fixed: hc-admin's
+  `SiblingEventParser` reads `subject.patientId` into `externalId`, so an account id under that name would have
+  been overwritten by the api's `patientId` on the next `OnboardingStarted` for the same subject, silently.
+  Renaming loses nothing — a gateway frame's `patientId` has never been anything but `null`.
+- **Nothing on this side reads the third component**, so the rename is producer-only here: all three consumers
+  (`CareDelegationMailer`, `DeletionRequestMailer`, `DeletionAccountCloser`) read `subject().email()` and nothing
+  else. `PatientEventConsumerBindingIT.anInboundFrameFromTheOtherProducerStillBinds` pins that an api frame still
+  deserializes though its subject now carries a name this record does not have.
+- **Both events, not one.** `AccountCreated` and `AccountActivated` are pinned separately, at the publisher and
+  again at the endpoints that emit them (`AccountEventIdentityIT`) — the item is explicit that carrying the id on
+  one and not the other makes a consumer's join depend on which frame arrived first.
+- **hc-admin must read `subject.accountId`.** Their parser reads `patientId` today and would go on receiving
+  `null` from this producer, which is the pre-change behaviour rather than a regression — but it is the last step
+  of their item 115 and nothing on either side fails if it is missed.
+
 ### A refused write's `detail` carries the thrown message, and registration refuses like everything else (2026-09-17 — `docs/backlog.md` item 48)
 
 `[x]` — **both clauses.** The body half landed first; the headers half was held back as a cross-product

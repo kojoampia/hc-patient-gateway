@@ -135,6 +135,8 @@ class DeletionAccountCloserUnitTest {
     }
 
     private static PatientEvent.Subject subject() {
-        return new PatientEvent.Subject("kojo@example.test", "kojo", "patient-1");
+        // Null rather than an id: these frames come from hc-patient-service, whose subject names its third component
+        // `patientId`, which this record no longer does — so it binds to nothing. Only the email is read here.
+        return new PatientEvent.Subject("kojo@example.test", "kojo", null);
     }
 }

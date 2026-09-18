@@ -87,18 +87,19 @@ public class CareAngelResource {
                             mailService.sendCareAngelNominationToExistingUserMail(angel);
                         } else {
                             mailService.sendCareAngelNominationMail(angel);
+                            // `angel` is the stored account read back by email, so it carries the id the subject needs
+                            // — `findOrCreate` returns a DTO of login/email/existed and no id, which is why the
+                            // publish happens here rather than one step up.
                             events.publish(
                                 PatientEventType.ACCOUNT_CREATED,
-                                angel.getEmail(),
-                                angel.getLogin(),
+                                angel,
                                 Map.of("authorities", "ROLE_USER,ROLE_ANGEL", "activated", true, "reason", "careAngelNomination")
                             );
                             // Created already activated, so the two events are simultaneous rather than minutes apart.
                             // A consumer building a funnel needs to see the activation it would otherwise wait for.
                             events.publish(
                                 PatientEventType.ACCOUNT_ACTIVATED,
-                                angel.getEmail(),
-                                angel.getLogin(),
+                                angel,
                                 Map.of("activatedAt", java.time.Instant.now().toString())
                             );
                         }
