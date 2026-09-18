@@ -294,6 +294,107 @@ class UserResourceIT {
         webTestClient.get().uri("/api/admin/users/unknown").exchange().expectStatus().isNotFound();
     }
 
+    /**
+     * The by-id read returns the same record the by-login read does, addressed the other way.
+     *
+     * <p>Asserts the body rather than the status, and asserts {@code id} in particular: this endpoint exists so
+     * that hc-admin can hold a {@code User.id} instead of a login, so a 200 carrying somebody else's record —
+     * or carrying a projection with the id stripped out — would be the whole defect it is meant to prevent.</p>
+     */
+    @Test
+    void getUserById() {
+        // Initialize the database
+        User saved = userRepository.save(user).block();
+
+        // Get the user by its id rather than its login
+        webTestClient
+            .get()
+            .uri("/api/admin/users/id/{id}", saved.getId())
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectHeader()
+            .contentType(MediaType.APPLICATION_JSON)
+            .expectBody()
+            .jsonPath("$.id")
+            .isEqualTo(saved.getId())
+            .jsonPath("$.login")
+            .isEqualTo(DEFAULT_LOGIN)
+            .jsonPath("$.firstName")
+            .isEqualTo(DEFAULT_FIRSTNAME)
+            .jsonPath("$.lastName")
+            .isEqualTo(DEFAULT_LASTNAME)
+            .jsonPath("$.email")
+            .isEqualTo(DEFAULT_EMAIL)
+            .jsonPath("$.imageUrl")
+            .isEqualTo(DEFAULT_IMAGEURL)
+            .jsonPath("$.langKey")
+            .isEqualTo(DEFAULT_LANGKEY)
+            .jsonPath("$.activated")
+            .isEqualTo(true);
+
+        userRepository.deleteAll().block();
+    }
+
+    @Test
+    void getNonExistingUserById() {
+        webTestClient.get().uri("/api/admin/users/id/{id}", "no-such-account").exchange().expectStatus().isNotFound();
+    }
+
+    /**
+     * An ordinary account must not be able to read another account by id.
+     *
+     * <p>Three gateways in this estate share one JWT signing key, so {@code .authenticated()} on a path that
+     * names its subject would mean every account in three products — every patient included. {@code ROLE_ADMIN}
+     * alone is the gate, matching the by-login read.</p>
+     */
+    @Test
+    @WithMockUser(authorities = AuthoritiesConstants.USER)
+    void getUserByIdIsForbiddenForOrdinaryUsers() {
+        User saved = userRepository.save(user).block();
+
+        webTestClient.get().uri("/api/admin/users/id/{id}", saved.getId()).exchange().expectStatus().isForbidden();
+
+        userRepository.deleteAll().block();
+    }
+
+    /**
+     * A {@code HEAD} reaches this handler, which is what makes the verb worth gating.
+     *
+     * <p>This is the premise the refusal case below rests on, asserted rather than assumed: Spring dispatches a
+     * {@code HEAD} to the {@code @GetMapping} handler and answers 200 for a known id, so the endpoint really is
+     * an existence oracle over the account collection to anyone the {@code HEAD} path lets through.</p>
+     */
+    @Test
+    void headOfUserByIdReachesTheHandler() {
+        User saved = userRepository.save(user).block();
+
+        webTestClient.head().uri("/api/admin/users/id/{id}", saved.getId()).exchange().expectStatus().isOk();
+
+        webTestClient.head().uri("/api/admin/users/id/{id}", "no-such-account").exchange().expectStatus().isNotFound();
+
+        userRepository.deleteAll().block();
+    }
+
+    /**
+     * The refusal is on the verb, not on {@code GET}.
+     *
+     * <p>Spring dispatches a {@code HEAD} to a {@code @GetMapping} handler, so a rule scoped to
+     * {@code HttpMethod.GET} lets one through — hc-professional shipped exactly that hole. A body-less verb is
+     * not a lesser read: a {@code HEAD} answering 200 for a known id and 404 for an unknown one is an
+     * existence oracle over the account collection with no body at all. This case exists so that narrowing
+     * either the chain rule or the {@code @PreAuthorize} to {@code GET} goes red.</p>
+     */
+    @Test
+    @WithMockUser(authorities = AuthoritiesConstants.USER)
+    void headOfUserByIdIsForbiddenForOrdinaryUsers() {
+        User saved = userRepository.save(user).block();
+
+        webTestClient.head().uri("/api/admin/users/id/{id}", saved.getId()).exchange().expectStatus().isForbidden();
+
+        userRepository.deleteAll().block();
+    }
+
     @Test
     void updateUser() throws Exception {
         // Initialize the database

@@ -343,6 +343,21 @@ public class UserService {
     }
 
     /**
+     * Reads the account with this {@code User.id}.
+     *
+     * <p>The by-id twin of {@link #getUserWithAuthoritiesByLogin(String)}, and it exists for the same reason that
+     * one does: it is the lookup behind an {@code /api/admin/users} read. Authorities are embedded on the
+     * document here, so — exactly as in the by-login path — the name is about what the caller gets back rather
+     * than about a second fetch.</p>
+     *
+     * @param id the account's identifier.
+     * @return the account, or empty when no account has that id.
+     */
+    public Mono<User> getUserWithAuthoritiesById(String id) {
+        return userRepository.findById(id);
+    }
+
+    /**
      * Answers whether {@code login} can be registered, and when it cannot, offers alternatives that can.
      *
      * <p>The login is lower-cased first because {@link #registerUser} stores it lower-cased. Without
