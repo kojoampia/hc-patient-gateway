@@ -26,7 +26,7 @@ class PlansRouteIT {
 
     @Test
     void thePlansRouteTargetsAbofonsasContentApi() {
-        String prefix = "spring.cloud.gateway.server.webflux.routes[0]";
+        String prefix = routeNamed("abofonsa-plans");
 
         assertThat(environment.getProperty(prefix + ".id")).isEqualTo("abofonsa-plans");
         assertThat(environment.getProperty(prefix + ".predicates[0]")).isEqualTo("Path=/api/plans");
@@ -34,4 +34,24 @@ class PlansRouteIT {
         assertThat(environment.getProperty(prefix + ".filters[0]")).isEqualTo("SetPath=/api/v1/content/plans");
         assertThat(environment.getProperty(prefix + ".uri")).contains("abofonsa");
     }
+
+    /**
+     * The property prefix of the route with this id, whatever position it holds.
+     *
+     * <p>This test read {@code routes[0]} until 2026-09-18, when item 39 declared the membership-stream route ahead of
+     * this one and the index moved. A positional read has to be edited every time a route is added, and the failure it
+     * produces names the wrong route — so it is worth the eight lines to look the id up instead.</p>
+     */
+    private String routeNamed(String id) {
+        for (int index = 0; index < MAX_ROUTES; index++) {
+            String prefix = "spring.cloud.gateway.server.webflux.routes[" + index + "]";
+            if (id.equals(environment.getProperty(prefix + ".id"))) {
+                return prefix;
+            }
+        }
+        throw new AssertionError("no route declared with id " + id + " — it has been removed, not merely moved");
+    }
+
+    /** Far more routes than this file will ever declare; a bound only so the loop terminates. */
+    private static final int MAX_ROUTES = 32;
 }

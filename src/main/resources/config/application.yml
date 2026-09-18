@@ -123,6 +123,28 @@ spring:
         webflux:
           default-filters:
             - JWTRelay
+          # BUFFERING OFF FOR THE MEMBERSHIP STREAM, and this is the property that decides it.
+          # NettyWriteResponseFilter writes a response of one of these types with writeAndFlushWith,
+          # one flush per chunk, instead of collecting it — so an SSE frame leaves this gateway when
+          # the api produced it rather than when the response is finished, which for a stream is
+          # never. These two ARE the framework default; they are written out because "the default
+          # happens to be right" is not a decision anybody can find later, and because dropping
+          # text/event-stream from this list would hold every patient's push until the connection
+          # closed, with nothing failing.
+          #
+          # ⚠ WHAT THE TEST CAN AND CANNOT SEE. MembershipStreamRouteIT asserts the value
+          # GatewayProperties actually resolved, which catches an ENVIRONMENT that overrides this
+          # list — the ROUTES_* trap below, one property along. It does NOT catch a mistyped key
+          # here, because the value declared equals the default and a key that binds to nothing
+          # leaves the correct answer behind. Do not read that test as proof that this block is in
+          # force; it is proof that text/event-stream is streamed.
+          #
+          # The other half of not buffering is nginx's, and the api sends `X-Accel-Buffering: no` for
+          # it. This gateway passes response headers through untouched, which is what makes that
+          # work end to end. See backlog item 39.
+          streaming-media-types:
+            - text/event-stream
+            - application/stream+json
           discovery:
             locator:
               enabled: true
@@ -186,6 +208,50 @@ spring:
           # stack with a real patient token, because nothing in this repository can read a sibling
           # repository's compose file.
           routes:
+            # THE ONE LONG-LIVED RESPONSE THIS GATEWAY CARRIES, and every default it meets is written
+            # for a request that finishes. Backlog item 39: the patient service holds a
+            # text/event-stream open for as long as the browser is on the screen, and the gateway
+            # streams it rather than terminating it — terminating SSE here would mean this gateway
+            # learning what a membership is and carrying a second copy of the who-may-see-it rule
+            # that PatientScope already owns, which was considered and declined.
+            #
+            # It is declared ahead of the broad /services/hcpatientservice/** route on purpose and
+            # with an explicit order, because it exists ONLY to say something that route does not.
+            # Route order among property-declared and discovery-located routes is otherwise
+            # unspecified, and losing the race here does not fail: the stream is simply cut at the
+            # response timeout, which reads as a flaky connection rather than as a route problem.
+            #
+            # ⛔ THIS ROUTE IS NOT IN ANY DEPLOYED ENVIRONMENT YET, and the block above says why: both
+            # compose files set SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_* and replace this list
+            # entire. They currently declare ROUTES_0 (hcpatientservice), ROUTES_1
+            # (professionalservice) and ROUTES_2 (abofonsa-plans), so this needs a ROUTES_3 with the
+            # same predicate, StripPrefix=2, and — the part that is easy to drop when translating a
+            # nested metadata map into flat variables —
+            # SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_3_METADATA_RESPONSE_TIMEOUT: "-1".
+            # Without it the stream works in development and is cut in the one place it matters.
+            # Those files are in hc-patient/deploy and hc-patient/quality, which nothing here can
+            # edit; backlog item 39 cycle 1 delivers the server halves only.
+            - id: hcpatientservice-membership-stream
+              uri: lb://hcpatientservice
+              order: -1
+              predicates:
+                # An ENDPOINT, not a service — the rule stated below for cross-stack routes, applied
+                # here too because a narrow predicate costs nothing and a wide one is how the
+                # professionalservice route exposed a staff directory.
+                - Path=/services/hcpatientservice/api/membership-events
+              filters:
+                # Matches the deployed hcpatientservice route's shape: /services/<id>/api/... -> /api/...
+                - StripPrefix=2
+              metadata:
+                # ⚠ THE WHOLE REASON THIS ROUTE EXISTS. -1 disables the response timeout for this
+                # route alone; NettyRoutingFilter reads `response-timeout` out of the route metadata
+                # and treats a negative value as "none". Without it the gateway applies
+                # spring.cloud.gateway.server.webflux.httpclient.response-timeout, and an environment
+                # that sets one — a compose file, a Consul KV entry — would cut every patient's
+                # stream at that interval with a 504 the client cannot distinguish from a dead
+                # network. Nothing sets one today, which is exactly why this is easy to omit and
+                # invisible when it is.
+                response-timeout: -1
             - id: abofonsa-plans
               uri: ${abofonsa.base-url:https://web.abofonsa.com}
               predicates:
