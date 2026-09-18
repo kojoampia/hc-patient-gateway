@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cloud.stream.config.BindingServiceProperties;
 import org.springframework.context.ApplicationContext;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * That the consumer is still bound to the topic, and still by the name the configuration expects.
@@ -41,6 +42,9 @@ class PatientEventConsumerBindingIT {
     @Autowired
     private ApplicationContext context;
 
+    @Autowired
+    private ObjectMapper objectMapper;
+
     @Test
     void theConsumerFunctionExistsUnderTheNameTheConfigurationNames() {
         // `patientEventsConsumer` is listed in spring.cloud.function.definition. A bean by any other name is not
@@ -66,6 +70,35 @@ class PatientEventConsumerBindingIT {
         assertThat(bindingServiceProperties.getBindingProperties(BINDING).getGroup())
             .as("a missing group turns every replica into a duplicate notifier")
             .isEqualTo("patient-gateway");
+    }
+
+    /**
+     * That the other producer's frames still bind, though the two subjects no longer agree on a field name.
+     *
+     * <p>Backlog item 56 renamed this service's {@code subject.patientId} to {@code subject.accountId}, because the
+     * gateway now sends its own {@code User.id} there and the two identifiers must be distinguishable by name.
+     * {@code hc-patient-service} keeps {@code patientId} and is the producer of every frame this consumer reads —
+     * {@code CareDelegationChanged} and {@code DeletionRequestChanged} — so a strict binding would reject all of them
+     * and every delegation and erasure mail in the product would stop, with nothing failing anywhere.</p>
+     *
+     * <p>Asserted against the context's own {@code ObjectMapper}, which is the one the binder's message converter
+     * uses. A mapper built in a unit test would be answering a different question.</p>
+     */
+    @Test
+    void anInboundFrameFromTheOtherProducerStillBinds() {
+        String fromTheApi =
+            """
+            {"eventId":"e1","type":"CareDelegationChanged","version":1,"occurredAt":"2026-09-18T09:00:00Z",
+             "source":"hcPatientService","subject":{"email":"ama@example.test","login":"ama","patientId":"p-1"},
+             "data":{"change":"REVOKED"}}
+            """;
+
+        PatientEvent event = objectMapper.readValue(fromTheApi, PatientEvent.class);
+
+        assertThat(event.subject().email()).as("the email is what every handler here reads").isEqualTo("ama@example.test");
+        assertThat(event.subject().accountId())
+            .as("the api's patientId is not this service's accountId and must not be read as one")
+            .isNull();
     }
 
     @Test

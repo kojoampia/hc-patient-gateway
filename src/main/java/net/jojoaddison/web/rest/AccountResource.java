@@ -105,8 +105,7 @@ public class AccountResource {
                 user ->
                     events.publish(
                         PatientEventType.ACCOUNT_CREATED,
-                        user.getEmail(),
-                        user.getLogin(),
+                        user,
                         Map.of(
                             "authorities",
                             user.getAuthorities().stream().map(a -> a.getName()).sorted().collect(Collectors.joining(",")),
@@ -154,15 +153,7 @@ public class AccountResource {
         return userService
             .activateRegistration(key)
             .switchIfEmpty(Mono.error(new AccountResourceException("No user was found for this activation key")))
-            .doOnSuccess(
-                user ->
-                    events.publish(
-                        PatientEventType.ACCOUNT_ACTIVATED,
-                        user.getEmail(),
-                        user.getLogin(),
-                        Map.of("activatedAt", Instant.now().toString())
-                    )
-            )
+            .doOnSuccess(user -> events.publish(PatientEventType.ACCOUNT_ACTIVATED, user, Map.of("activatedAt", Instant.now().toString())))
             .then();
     }
 
