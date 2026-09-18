@@ -247,6 +247,44 @@ public class UserResource {
     }
 
     /**
+     * {@code GET /admin/users/id/:id} : get the user with this {@code User.id}.
+     *
+     * <p>A second way to address a record this resource already serves by login, and it returns the same
+     * {@link AdminUserDTO} unchanged — so it exposes no field {@code GET /admin/users/:login} did not.</p>
+     *
+     * <p><b>Why it exists.</b> hc-admin is migrating {@code Profile.accountId} to hold this gateway's
+     * {@code User.id} (their item 123). Today it holds a login, which is why the by-login read serves them;
+     * after that migration they hold an id and no endpoint here accepts one, so every account read would
+     * degrade to paging this whole collection and matching on their side. The rejected alternative was
+     * hc-admin storing our login beside the id — rejected because that is identity mirroring, and because
+     * {@code PUT /api/admin/users/:login} exists here, so a stored copy of a login goes stale with nothing
+     * failing.</p>
+     *
+     * <p><b>The gate is {@code ROLE_ADMIN} alone</b>, matching the by-login read. It has to be: this path
+     * names its subject, and three gateways in this estate share one JWT signing key, so
+     * {@code .authenticated()} here would mean every account in three products — every patient included.
+     * The {@code @PreAuthorize} stays on the handler whatever {@code SecurityConfiguration} says, because
+     * method security intercepts the invocation for any verb — Spring dispatches a {@code HEAD} to a
+     * {@code @GetMapping} handler, and a matcher scoped to {@code HttpMethod.GET} would not see it.
+     * The chain's own rule for this path is the unscoped {@code /api/admin/**}, which is verb-agnostic
+     * and needs no change.</p>
+     *
+     * @param id the id of the user to find.
+     * @return the {@link ResponseEntity} with status {@code 200 (OK)} and with body the user, or with status
+     *         {@code 404 (Not Found)}.
+     */
+    @GetMapping("/users/id/{id}")
+    @PreAuthorize("hasAuthority(\"" + AuthoritiesConstants.ADMIN + "\")")
+    public Mono<ResponseEntity<AdminUserDTO>> getUserById(@PathVariable("id") String id) {
+        log.debug("REST request to get User by id : {}", id);
+        return userService
+            .getUserWithAuthoritiesById(id)
+            .map(AdminUserDTO::new)
+            .map(ResponseEntity::ok)
+            .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND)));
+    }
+
+    /**
      * {@code DELETE /admin/users/:login} : delete the "login" User.
      *
      * @param login the login of the user to delete.
