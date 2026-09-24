@@ -73,13 +73,20 @@ class PatientEventConsumerBindingIT {
     }
 
     /**
-     * That the other producer's frames still bind, though the two subjects no longer agree on a field name.
+     * That a frame carrying the OLD subject field name still binds — the replay case.
      *
-     * <p>Backlog item 56 renamed this service's {@code subject.patientId} to {@code subject.accountId}, because the
-     * gateway now sends its own {@code User.id} there and the two identifiers must be distinguishable by name.
-     * {@code hc-patient-service} keeps {@code patientId} and is the producer of every frame this consumer reads —
-     * {@code CareDelegationChanged} and {@code DeletionRequestChanged} — so a strict binding would reject all of them
-     * and every delegation and erasure mail in the product would stop, with nothing failing anywhere.</p>
+     * <p><b>This javadoc described a live divergence until 2026-09-24 and now describes history, which is the only
+     * reason the test's fixture still names {@code patientId}.</b> It read: *"{@code hc-patient-service} keeps
+     * {@code patientId} and is the producer of every frame this consumer reads."* Item 72 ended that — the api's
+     * subject third component is {@code accountId} too, so both producers now agree on one name with one meaning,
+     * and new frames from either carry it.</p>
+     *
+     * <p>What the test still pins is worth keeping and is no longer about a disagreement: <b>frames published before
+     * 2026-09-24 carry {@code patientId}</b>, and a topic is not drained when a deploy happens. A strict binding
+     * would reject every one of them on replay — {@code CareDelegationChanged} and {@code DeletionRequestChanged}
+     * among them — and every delegation and erasure mail those frames would have sent would stop, with nothing
+     * failing anywhere. {@code @JsonIgnoreProperties(ignoreUnknown = true)} on {@code Subject} is what prevents it;
+     * the unknown {@code patientId} is dropped and {@code accountId} deserializes null.</p>
      *
      * <p>Asserted against the context's own {@code ObjectMapper}, which is the one the binder's message converter
      * uses. A mapper built in a unit test would be answering a different question.</p>
