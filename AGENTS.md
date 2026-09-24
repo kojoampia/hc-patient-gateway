@@ -24,7 +24,7 @@ Statements below are split between **current** (true of the code today) and **ta
 - Routing stays discovery-driven: `/services/{serviceId}/**` rewritten to `/**`, with `JWTRelay` as the default filter. A static route needs a written reason.
 - DTOs (`service/dto`) and MapStruct mappers (`service/mapper`) mediate between `domain.User` and the wire — don't return `User` directly from a resource.
 - Mongock (`config/dbmigrations`) owns schema and **authority** evolution; add a change unit rather than seeding from application code. **Accounts are the exception**: a change unit runs in every profile, so seeding one there ships its credentials to production. Development accounts belong in `DevSeedDataInitializer` (profile-gated), and the production administrator in `AdminBootstrapInitializer` (no default password).
-- Kafka via Spring Cloud Stream (`broker/`). Today only the generated `sse-topic` binding exists; real domain topics are agreed cross-repo (see `patient-gateway.md`).
+- Kafka via Spring Cloud Stream. The generated `broker/` scaffold and its `sse-topic` binding were deleted on 2026-09-24 (`docs/backlog.md` item 61). What remains is the real domain topic: `patient-events`, published by `service/event/PatientEventPublisher` and consumed back by `PatientEventMailRouter` (`patientEventsConsumer`) for the delegation/erasure mails — a cross-repo contract with `hc-patient-service`, which publishes the journey's other half onto the same topic.
 - **Target:** the gateway is the natural place for rate limiting and request quotas; neither is implemented yet.
 
 ## Security Considerations

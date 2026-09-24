@@ -28,8 +28,11 @@ There is no full JHipster BOM here — only the `jhipster-framework` library —
 - **Public user listing** via `/api/users`
 - **Gateway route inspection** via `/api/gateway/routes`
 - **Service proxying** through `/services/{serviceId}/**`
-- **Kafka publish/consume endpoints** via `/api/patient-gateway-kafka`
 - **Mongo bootstrap data** created by Mongock on startup
+
+The generated Kafka bridge (`/api/patient-gateway-kafka/{publish,consume}`) was deleted on 2026-09-24
+(`docs/backlog.md` item 61), as the api's was on 2026-09-18. Kafka itself stays: `patient-events`
+carries the account events out and the delegation/erasure mail triggers back in.
 
 There is **no generated frontend app** in this repository (`skipClient: true`, no `src/main/webapp`). The main resources under `src/main/resources` are configuration, i18n bundles, and mail templates. The client scaffolding the generator left at the repo root — `angular.json`, `webpack/`, `jest.conf.js` — was deleted on 2026-08-30. The patient UI lives in the separate `hc-patient-dashboard` repo and reaches this gateway over HTTP.
 
@@ -158,11 +161,9 @@ this application's production instance, and is what `MigrationsSeedNoAccountsTes
   production builds with `SERVER_API_URL` empty, no CORS is configured anywhere in this subsystem,
   and production enforces a CSP.
 
-### Gateway and Kafka
+### Gateway
 
 - `GET /api/gateway/routes`
-- `POST /api/patient-gateway-kafka/publish?message=...`
-- `GET /api/patient-gateway-kafka/consume`
 
 ## Local development
 

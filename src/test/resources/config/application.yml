@@ -79,7 +79,11 @@ spring:
         enabled: false
       enabled: false
     function:
-      definition: kafkaConsumer;kafkaProducer;patientEventsConsumer
+      # Mirrors the main file — this resource REPLACES it rather than merging with it, so a name
+      # present only there is bound in production and in nothing any test can see, and vice versa.
+      # The scaffold pair (`kafkaConsumer;kafkaProducer`) was deleted with the scaffold on
+      # 2026-09-24 (backlog item 61). PatientEventFunctionDefinitionTest holds both copies.
+      definition: patientEventsConsumer
     stream:
       kafka:
         binder:
@@ -96,16 +100,6 @@ spring:
               # One patient's events share a partition, and therefore an order.
               messageKeyExpression: headers['patientKey']
       bindings:
-        binding-out-0:
-          content-type: text/plain
-          group: patient-gateway
-        kafkaConsumer-in-0:
-          destination: sse-topic
-          content-type: text/plain
-          group: patient-gateway
-        kafkaProducer-out-0:
-          content-type: text/plain
-          group: patient-gateway
         # The patient journey. The patient service publishes onboarding and delegation onto the same topic; this
         # service contributes the two account events that happen before a patient record exists at all.
         patientEvents-out-0:
