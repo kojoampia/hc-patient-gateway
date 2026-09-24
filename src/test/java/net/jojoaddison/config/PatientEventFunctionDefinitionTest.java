@@ -113,19 +113,38 @@ class PatientEventFunctionDefinitionTest {
      *
      * <p>{@code application.yml} is several documents separated by {@code ---}, so a single
      * {@code load} sees only the first and would report every key missing.</p>
+     *
+     * <p><b>It fails when two documents carry the same path rather than taking either.</b> Spring
+     * merges multi-document YAML with the <em>later</em> document winning; a walk that returns the
+     * first match has the opposite precedence, so a second occurrence would defeat this whole test
+     * in both directions at once. Measured, not reasoned: appending a document reading
+     * {@code spring.cloud.function.definition: kafkaConsumer} to the main file left all four tests
+     * here <em>green</em>, including the one whose only job is to catch that name. A test written
+     * against the replace-rather-than-merge YAML trap must not itself be defeatable by a YAML edit
+     * one {@code ---} away. A legitimate second occurrence — a profile-gated definition, say — is
+     * precisely the moment somebody should re-derive what this reads, so it is a red test and not a
+     * silent choice.</p>
      */
     private static Map<String, Object> path(Path file, String... keys) {
         assertThat(file).as("run from the module directory: %s", file.toAbsolutePath()).isRegularFile();
+        List<Map<String, Object>> carried = new ArrayList<>();
         for (Object document : documents(file)) {
             Map<String, Object> node = asMap(document);
             for (String key : keys) {
                 node = child(node, key);
             }
             if (!node.isEmpty()) {
-                return node;
+                carried.add(node);
             }
         }
-        return Map.of();
+        assertThat(carried)
+            .as(
+                "%s: more than one YAML document carries %s; the later one wins at runtime and this test reads the first",
+                file,
+                String.join(".", keys)
+            )
+            .hasSizeLessThan(2);
+        return carried.isEmpty() ? Map.of() : carried.get(0);
     }
 
     private static Iterable<Object> documents(Path file) {
