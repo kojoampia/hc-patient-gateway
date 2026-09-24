@@ -404,7 +404,7 @@ before the next JDK bump.
 - `[x]` Self-service account flows: register, activate, profile update, change password, reset password init/finish.
 - `[x]` Admin user management (`/api/admin/users`), authority management (`/api/authorities`), public user listing (`/api/users`).
 - `[x]` Discovery-based routing: `/services/{serviceId}/**` → `/**` downstream, with the `JWTRelay` default filter.
-- `[x]` Route inspection (`GET /api/gateway/routes`) and the Kafka bridge (`/api/patient-gateway-kafka`).
+- `[x]` Route inspection (`GET /api/gateway/routes`). The generated Kafka bridge (`/api/patient-gateway-kafka`) was part of this line until 2026-09-24, when `docs/backlog.md` item 61 deleted the scaffold outright — the api shed its copy on 2026-09-18 (item 39 cycle 1), and the stream this subsystem actually has lives there.
 - `[x]` Seeding, in three parts since the credentials fix (2026-08-02). Two idempotent Mongock change units seed **authorities only, in every profile**: `InitialSetupMigration` (001) `ROLE_USER`/`ROLE_ADMIN`, `PatientRolesMigration` (002) `ROLE_PATIENT`/`ROLE_ANGEL` — a second change unit rather than an edit to 001, so databases that already ran 001 still get the new roles. `DevSeedDataInitializer` seeds the `admin`/`user`/`patient`/`angel` accounts under `dev`/`test` only, with passwords derived per login by `SeedData`. `AdminBootstrapInitializer` creates the first administrator in any profile from `gateway.admin.password` (`GATEWAY_ADMIN_PASSWORD`), which has **no default**; unset, nothing is created and it warns. Passwords are never logged. The change units create no accounts because Mongock has no notion of a profile — see the incident note below.
 - `[x]` Spring Boot 4.0.6 upgrade, reactive throughout, BlockHound active in tests. Java target moved 26 → **25** on 2026-08-04 (see below).
 
@@ -642,9 +642,9 @@ Re-verified 2026-07-30: every item below is still open. "Add" means the file doe
     - Routes whose `serviceId` matches `spring.application.name` are excluded.
     - `DiscoveryClient.getInstances(serviceId)` results are attached to returned routes.
     - An empty route stream returns `200 OK` with an empty list.
-12. `[ ]` **Expand `web/rest/PatientGatewayKafkaResourceIT`** — `consume()` emits multiple accepted messages in order, not just the first.
-13. `[ ]` **Add `broker/KafkaConsumerTest`** — `accept(...)` pushes messages into the `Flux` from `getFlux()`, and sequential calls are observed in order.
-14. `[ ]` **Add `broker/KafkaProducerTest`** — `get()` returns the current hard-coded payload `kakfa_producer`. (Note the typo in the payload; decide whether to fix it before pinning it in a test.)
+12. `[x]` ~~**Expand `web/rest/PatientGatewayKafkaResourceIT`**~~ — overtaken: the resource, its IT and the `broker/` classes were deleted with the scaffold on 2026-09-24 (`docs/backlog.md` item 61). There is nothing left to cover.
+13. `[x]` ~~**Add `broker/KafkaConsumerTest`**~~ — overtaken by item 61, as above.
+14. `[x]` ~~**Add `broker/KafkaProducerTest`**~~ — overtaken by item 61, as above. The `kakfa_producer` typo this entry noted was never fixed and no longer exists to fix; the supplier it named was being polled once a second into a topic nothing consumed, which is why deletion won over repair.
 
 ### Mail and bootstrap
 

@@ -276,7 +276,18 @@ spring:
                 # independently of whether Abofonsa would have accepted it.
                 - RemoveRequestHeader=Authorization
     function:
-      definition: kafkaConsumer;kafkaProducer;patientEventsConsumer
+      # `patientEventsConsumer` is PatientEventMailRouter's binding and it sends real mail — the
+      # care-delegation and erasure notices. Dropping it from this list does not fail anything:
+      # the context starts, the gateway serves, and every one of those mails silently stops.
+      # PatientEventFunctionDefinitionTest holds this line (and the test file's copy of it) to the
+      # name; PatientEventConsumerBindingIT proves the bean behind the name still exists.
+      #
+      # `kafkaConsumer` and `kafkaProducer` were here until 2026-09-24 and were the JHipster
+      # scaffold, deleted with it (backlog item 61) — the api shed its copy on 2026-09-18.
+      # `kafkaProducer` was a Supplier<String> returning the literal "kakfa_producer", which Spring
+      # Cloud Stream polls once a second, so this gateway published that string to a topic nothing
+      # consumed for as long as it ran.
+      definition: patientEventsConsumer
     stream:
       kafka:
         binder:
@@ -285,8 +296,9 @@ spring:
           # THIS IS THE PROPERTY THAT GOVERNS SENDS, and it is the one to set in a compose file.
           #
           # backlog item 7. Everything in this subsystem publishes through `StreamBridge`
-          # (`PatientEventPublisher`, plus the generated `*KafkaResource`), and StreamBridge goes
-          # through the BINDER — so `spring.cloud.stream.kafka.binder.brokers`, overridden as
+          # (`PatientEventPublisher`; the generated `*KafkaResource` did too, until item 61 deleted
+          # the scaffold), and StreamBridge goes through the BINDER — so
+          # `spring.cloud.stream.kafka.binder.brokers`, overridden as
           # SPRING_CLOUD_STREAM_KAFKA_BINDER_BROKERS, is what decides where an event actually lands.
           # `SPRING_KAFKA_BOOTSTRAP_SERVERS` configures Spring Boot`s own KafkaTemplate/KafkaAdmin,
           # which NOTHING HERE USES. The quality stack sets both and production sets only this one;
@@ -310,16 +322,6 @@ spring:
               # One patient's events share a partition, and therefore an order.
               messageKeyExpression: headers['patientKey']
       bindings:
-        binding-out-0:
-          content-type: text/plain
-          group: patient-gateway
-        kafkaConsumer-in-0:
-          destination: sse-topic
-          content-type: text/plain
-          group: patient-gateway
-        kafkaProducer-out-0:
-          content-type: text/plain
-          group: patient-gateway
         # The patient journey. The patient service publishes onboarding and delegation onto the same topic; this
         # service contributes the two account events that happen before a patient record exists at all.
         patientEvents-out-0:
