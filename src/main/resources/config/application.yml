@@ -171,17 +171,19 @@ spring:
           # ⚠ THIS LIST IS REPLACED, NOT EXTENDED, BY ANY ENVIRONMENT THAT SETS
           # SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_*. Spring Boot does not merge a collection
           # across property sources: the highest-precedence source that contributes any element
-          # supplies the whole list. Production and quality both set ROUTES_0 (hcpatientservice) and,
-          # since 2026-09-04, ROUTES_1 (professionalservice, for the patient day plan) — so in every
-          # deployed environment the route table is exactly those two and `abofonsa-plans` below is
-          # NOT in it.
+          # supplies the whole list. Production and quality both set ROUTES_0 (hcpatientservice),
+          # ROUTES_1 (professionalservice, for the patient day plan, since 2026-09-04) and ROUTES_2
+          # (abofonsa-plans, since item 4 closed on 2026-09-06) — verified in the compose files
+          # themselves on 2026-09-24 (`prod-server/compose.yml:209`, `quality/compose.yml:230`,
+          # both `ROUTES_2_ID: abofonsa-plans`). This paragraph said "exactly two" until backlog
+          # item 62; the block at the head of the routes list below names all three and was right.
           #
-          # Measured rather than reasoned: on the running quality stack,
-          # `GET /api/gateway/routes` as admin returns one entry, `/services/hcpatientservice/**`,
-          # and `GET /api/plans` answers 404 "No static resource api/plans". That is a real defect
-          # in the price-list proxy and it is NOT this block's to fix — it is hc-patient's
-          # docs/backlog.md item 4. What matters here is the consequence for whoever adds the next
-          # route: adding it below adds it in development only.
+          # An earlier version of this note also cited a live measurement — one route in
+          # `GET /api/gateway/routes`, `/api/plans` answering 404. That measurement predated
+          # ROUTES_1 and ROUTES_2 and described the defect item 4 closed; it is deleted rather
+          # than left dressed as evidence. What it was here to teach still holds and is the part
+          # worth keeping: adding a route below adds it in DEVELOPMENT ONLY, and whoever adds the
+          # next one must add a ROUTES_N to both compose files or ship a route that exists nowhere.
           #
           # NEVER DECLARE A CROSS-STACK ROUTE ON /api/**, here or in a compose file. It would
           # swallow this gateway's own /api/account, /api/authenticate and /api/users and proxy
