@@ -88,9 +88,13 @@ jhipster:
     # Allow Ionic for JHipster by default (* no longer allowed in Spring Boot 2.4+)
     #
     # The last entry is PORTLESS AND DELIBERATE. `https://localhost` is the Capacitor webview's own
-    # origin on a handset — `androidScheme: 'https'` plus Capacitor's default hostname, see
-    # mobile/capacitor.config.ts — where `https://localhost:8100` beside it is only ever `ionic serve`
-    # on a workstation. It reads like a truncated copy of that entry and is not one.
+    # origin on a handset, and that is read off what ships rather than off the file that authors it:
+    # the release build's merged config (android/app/build/intermediates/assets/release/
+    # mergeReleaseAssets/capacitor.config.json) carries `androidScheme: https` with NO hostname and NO
+    # server.url, @capacitor/android 8.5.0 defaults the hostname to `localhost` (CapConfig.java:38),
+    # and Bridge.java:625 composes `scheme + "://" + authority` with no port. `https://localhost:8100`
+    # beside it is only ever `ionic serve` on a workstation. This entry reads like a truncated copy of
+    # that one and is not one.
     #
     # The app reaches every other endpoint through CapacitorHttp, which is native and never
     # preflights, so CORS applies to exactly one request: the membership stream, which must be read
@@ -99,13 +103,22 @@ jhipster:
     # the stream is refused 403 before a frame is sent — measured against the quality gateway, where
     # `https://localhost:8100` got a 200 from the same endpoint in the same run.
     #
+    # THE ORIGIN IS NECESSARY, NOT SUFFICIENT: that same preflight carries
+    # `Access-Control-Request-Headers: authorization`, so `allowed-headers` below must keep admitting
+    # it — narrowing that line refuses the stream with this origin still listed. Spring gives
+    # `allowed-methods` a [GET, HEAD] default when it is absent and gives `allowed-headers` no default
+    # at all, which is why only the headers line is guarded by a test.
+    #
     # Auth here is header-borne, not cookie-borne, so the allowance creates no ambient-credential
-    # CSRF surface. docs/backlog.md item 67 carries the argument and the architect's decision.
+    # CSRF surface — `allow-credentials: true` below is pre-existing and attaches nothing that
+    # authenticates: CSRF is disabled (SecurityConfiguration:56) and the only ResponseCookie in this
+    # service is LocaleConfiguration's locale cookie. docs/backlog.md item 67 carries the argument and
+    # the architect's decision.
     #
     # THIS FILE IS QUALITY'S CORS POLICY, not just a developer's: the quality stack runs
     # SPRING_PROFILES_ACTIVE=dev,test and overrides no JHIPSTER_CORS_* variable. PRODUCTION IS NOT
     # COVERED — it has no cors block at all, so the shipped app against patient.abofonsa.com is still
-    # refused. That is deferred deliberately and tracked as item 75, not an omission to tidy up here.
+    # refused. That is deferred deliberately and tracked as item 77, not an omission to tidy up here.
     allowed-origins: 'http://localhost:8100,https://localhost:8100,http://localhost:9000,https://localhost:9000,https://localhost'
     # Enable CORS when running in GitHub Codespaces
     allowed-origin-patterns: 'https://*.githubpreview.dev'

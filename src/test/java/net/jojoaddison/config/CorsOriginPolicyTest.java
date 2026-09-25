@@ -50,8 +50,21 @@ import org.yaml.snakeyaml.Yaml;
  * nothing, and the symptom is a handset that never receives a frame while every desktop browser,
  * every health check and every test stays green.</p>
  *
+ * <p><b>And the origin is necessary rather than sufficient.</b> The preflight carries
+ * {@code Access-Control-Request-Headers: authorization}, so {@code allowed-headers} has to admit it
+ * as well — a "tighten CORS" edit that narrows that one line breaks the stream on device with the
+ * origin still present. Both preconditions are held here, and each reddens its own test, so a
+ * failure says which half went.</p>
+ *
  * <p>Backlog item 67, which item 39 cycle 3 was blocked on. <b>Production is deliberately not
- * covered here</b> — it has no CORS block at all and the architect deferred it; that is item 75.</p>
+ * covered here</b> — it has no CORS block at all and the architect deferred it; that is item 77.</p>
+ *
+ * <p>⚠ <b>That deferral number is unguarded, and it has already been wrong once.</b>
+ * {@link #theOriginListSaysWhyThePortlessEntryIsThere} pins {@code item 67} and not it, so neither a
+ * missing nor a renumbered deferral item reddens anything here. It was written as {@code item 75} when
+ * 75 was the next free number, and unrelated work took 75 and 76 before this branch merged — a
+ * citation to an unfiled item is a claim about the future, and the future moved. Re-read it against
+ * {@code docs/backlog.md} rather than trusting the suite.</p>
  *
  * <p>The idiom — read the file, assert on what it binds — is {@code GatewayRoutePolicyTest}'s and
  * {@code PatientEventFunctionDefinitionTest}'s in this repository.</p>
@@ -62,13 +75,28 @@ class CorsOriginPolicyTest {
     private static final Path APPLICATION_DEV_YML = Path.of("src", "main", "resources", "config", "application-dev.yml");
 
     /**
-     * The webview origin on a handset: {@code androidScheme: 'https'} plus Capacitor's default
-     * hostname, and <b>no port</b> (`mobile/capacitor.config.ts`).
+     * The webview origin on a handset, <b>read off the shipped artefact and the bridge source rather
+     * than off the file that authors them</b>.
+     *
+     * <p>{@code mobile/android/app/build/intermediates/assets/release/mergeReleaseAssets/capacitor.config.json}
+     * — the merged config inside the release build — carries {@code "server": {"androidScheme":
+     * "https"}} with <b>no {@code hostname} and no {@code url}</b>. In
+     * {@code @capacitor/android@8.5.0}, {@code CapConfig.java:38} defaults that hostname to
+     * {@code localhost}, and {@code Bridge.java:625} composes the origin as
+     * {@code scheme + "://" + authority} — appending no port, and taking the {@code server.url}
+     * override branch below it only when that key is present, which it is not. So the origin is
+     * {@code https://localhost}, portless, by construction rather than by convention.</p>
      */
     private static final String WEBVIEW_ORIGIN = "https://localhost";
 
     /** {@code ionic serve} on a workstation — the entry {@link #WEBVIEW_ORIGIN} is a prefix of. */
     private static final String IONIC_SERVE_ORIGIN = "https://localhost:8100";
+
+    /** The header the stream sends, and therefore the one its preflight asks permission for. */
+    private static final String AUTHORIZATION_HEADER = "Authorization";
+
+    /** {@code CorsConfiguration.ALL} — what {@code checkHeaders} treats as "admit anything". */
+    private static final String WILDCARD = "*";
 
     @Test
     void theCapacitorWebviewOriginIsAllowed() {
@@ -84,6 +112,50 @@ class CorsOriginPolicyTest {
                 IONIC_SERVE_ORIGIN
             )
             .contains(WEBVIEW_ORIGIN);
+    }
+
+    /**
+     * <b>The second precondition: {@code allowed-headers} must admit {@code Authorization}.</b>
+     *
+     * <p>The stream sends a bearer token, which is what forces the preflight in the first place, and
+     * the preflight therefore carries {@code Access-Control-Request-Headers: authorization}. An
+     * allowed origin with that header refused is still a refused request — so narrowing this one line
+     * breaks the device while {@link #theCapacitorWebviewOriginIsAllowed} stays green. Measured on the
+     * quality gateway, the passing preflight echoed {@code access-control-allow-headers: authorization}
+     * beside the origin, so both halves are visibly part of the same answer.</p>
+     *
+     * <p>Mirrors {@code CorsConfiguration.checkHeaders} rather than insisting on the wildcard:
+     * {@code allowedHeaders.contains("*")} admits anything, and otherwise each requested header is
+     * matched with {@code equalsIgnoreCase}. So an explicit {@code 'Authorization,Content-Type'} is a
+     * legitimate tightening and passes here, which is the point — this pins the <em>capability</em>,
+     * not the current value.</p>
+     *
+     * <p><b>{@code allowed-methods} is deliberately NOT asserted, and the asymmetry is the argument.</b>
+     * Read from {@code spring-web:7.0.7}: {@code setAllowedMethods} falls back to
+     * {@code DEFAULT_METHODS = [GET, HEAD]} when the property is empty or absent
+     * ({@code CorsConfiguration:305}), so deleting that line leaves this <em>GET</em> stream working.
+     * {@code checkHeaders} has no such fallback — {@code if (ObjectUtils.isEmpty(this.allowedHeaders))
+     * return null} at {@code CorsConfiguration:731} refuses the preflight outright. One absence is
+     * fatal and the other is not, so guarding both would pin a value whose loss costs nothing and
+     * leave two tests where one rule lives — the shape item 39 cycle 2 recorded, where a redundant
+     * filter hid which one was load-bearing.</p>
+     */
+    @Test
+    void theAllowedHeadersAdmitTheAuthorizationHeaderThePreflightAsksFor() {
+        List<String> headers = corsList("allowed-headers");
+        boolean admitsAuthorization =
+            headers.contains(WILDCARD) || headers.stream().anyMatch(header -> header.equalsIgnoreCase(AUTHORIZATION_HEADER));
+
+        assertThat(admitsAuthorization)
+            .as(
+                "jhipster.cors.allowed-headers is %s, which does not admit %s. The membership stream's " +
+                "preflight carries Access-Control-Request-Headers: authorization and is refused without " +
+                "it, whatever the origin list says — so the device gets no frame even though " +
+                "theCapacitorWebviewOriginIsAllowed is green. Use '*' or name the header. See backlog item 67.",
+                headers,
+                AUTHORIZATION_HEADER
+            )
+            .isTrue();
     }
 
     /**
@@ -115,11 +187,22 @@ class CorsOriginPolicyTest {
 
     /** {@code jhipster.cors.allowed-origins}, split into whole origins. */
     private static List<String> allowedOrigins() {
-        Object origins = path(APPLICATION_DEV_YML, "jhipster", "cors").get("allowed-origins");
-        if (origins == null) {
+        return corsList("allowed-origins");
+    }
+
+    /**
+     * One comma-separated {@code jhipster.cors} property, split into whole values.
+     *
+     * <p>Split rather than matched as text because the values are prefixes of one another:
+     * {@code https://localhost} is a prefix of {@code https://localhost:8100}, so a substring search
+     * for the first passes with only the second present.</p>
+     */
+    private static List<String> corsList(String key) {
+        Object value = path(APPLICATION_DEV_YML, "jhipster", "cors").get(key);
+        if (value == null) {
             return List.of();
         }
-        return List.of(String.valueOf(origins).split(",")).stream().map(String::trim).filter(origin -> !origin.isEmpty()).toList();
+        return List.of(String.valueOf(value).split(",")).stream().map(String::trim).filter(entry -> !entry.isEmpty()).toList();
     }
 
     /**
