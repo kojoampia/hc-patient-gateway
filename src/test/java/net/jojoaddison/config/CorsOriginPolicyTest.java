@@ -130,6 +130,15 @@ class CorsOriginPolicyTest {
      * legitimate tightening and passes here, which is the point — this pins the <em>capability</em>,
      * not the current value.</p>
      *
+     * <p><b>Accepting an explicit list is safe rather than optimistic because
+     * {@code Authorization} is today the whole of it.</b>
+     * {@code mobile/.../membership-stream.service.ts:285} sets exactly two headers —
+     * {@code Authorization} and {@code Accept: 'text/event-stream'} — and {@code Accept} is
+     * CORS-safelisted, so it never appears in {@code Access-Control-Request-Headers}. ⚠ The residual
+     * needs two independent changes and this guard would stay green through both: if that fetch gains
+     * a header that is <em>not</em> safelisted while somebody has meanwhile replaced {@code '*'} with
+     * an explicit list, the preflight refuses the new header and nothing here notices.</p>
+     *
      * <p><b>{@code allowed-methods} is deliberately NOT asserted, and the asymmetry is the argument.</b>
      * Read from {@code spring-web:7.0.7}: {@code setAllowedMethods} falls back to
      * {@code DEFAULT_METHODS = [GET, HEAD]} when the property is empty or absent
@@ -139,6 +148,16 @@ class CorsOriginPolicyTest {
      * fatal and the other is not, so guarding both would pin a value whose loss costs nothing and
      * leave two tests where one rule lives — the shape item 39 cycle 2 recorded, where a redundant
      * filter hid which one was load-bearing.</p>
+     *
+     * <p>⚠ <b>That whole asymmetry rests on one unstated fact, so state it:
+     * {@code applyPermitDefaultValues()} is never called on this configuration.</b>
+     * {@code WebConfigurer:39} hands {@code jHipsterProperties.getCors()} straight to
+     * {@code registerCorsConfiguration} — and that method ({@code CorsConfiguration:522}) would set
+     * {@code allowedHeaders} to {@code DEFAULT_PERMIT_ALL} when null ({@code :532}), along with
+     * origins and methods. <b>Had JHipster called it, an absent {@code allowed-headers} would mean
+     * permit-all and the paragraph above would be false in the direction that matters</b> — it would
+     * be arguing a fail-closed default where the code fails open. Re-check this line before trusting
+     * the rest.</p>
      */
     @Test
     void theAllowedHeadersAdmitTheAuthorizationHeaderThePreflightAsksFor() {
