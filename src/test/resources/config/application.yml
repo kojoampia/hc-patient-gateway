@@ -99,11 +99,29 @@ spring:
                 key.serializer: org.apache.kafka.common.serialization.StringSerializer
               # One patient's events share a partition, and therefore an order.
               messageKeyExpression: headers['patientKey']
+          entityEvents-out-0:
+            producer:
+              # Same trap as above, and the same fix: messageKeyExpression yields a String and the binder's default key
+              # serializer is ByteArraySerializer, which fails at SEND time rather than at startup. Here it would be
+              # doubly silent — EntityEventPublisher swallows send failures AND sends on a thread of its own.
+              configuration:
+                key.serializer: org.apache.kafka.common.serialization.StringSerializer
+              # One DOCUMENT's changes share a partition, and therefore an order — note this keys on the entity, not on
+              # the patient as the binding above does.
+              messageKeyExpression: headers['entityKey']
       bindings:
         # The patient journey. The patient service publishes onboarding and delegation onto the same topic; this
         # service contributes the two account events that happen before a patient record exists at all.
         patientEvents-out-0:
           destination: patient-events
+          content-type: application/json
+        # MIRRORED from src/main/resources/config/application.yml, and the mirroring is the point: this file REPLACES
+        # that one on the test classpath rather than merging with it. A binding present only there is bound in
+        # production and in nothing any test can see — and StreamBridge would invent a destination named after the
+        # binding, so EntityEventBindingIT would pass against a topic that is not patient.event. The api's item 32
+        # shipped an inert deployed consumer through exactly this gap.
+        entityEvents-out-0:
+          destination: patient.event
           content-type: application/json
         # Consumed back off the same topic to send the delegation emails. The group matters: without one every
         # instance would deliver its own copy, and a patient would be told their care angel stepped down once per
