@@ -225,10 +225,34 @@ public class EntityChangeCallback extends AbstractMongoEventListener<Object> {
      * a worse diagnostic and a better failure mode: the symptom lands on the publishing path that caused it rather than
      * on a patient's write. (BlockHound is test-scope, so in production the members of this category are
      * {@code NoClassDefFoundError} and friends, where swallowing is plainly right.)</p>
+     *
+     * <h2>⛔ …except {@link VirtualMachineError}, which is rethrown</h2>
+     *
+     * <p>Because for that one the log line below is <em>a lie</em>. "The record is unaffected" cannot be honoured after
+     * an {@link OutOfMemoryError}: the JVM is in an undefined state, the write may well have failed, and every later
+     * allocation fails anyway — so swallowing it would print a reassurance nobody can stand behind and carry on. A
+     * message asserting a property the code does not have is this estate's recurring defect class, and a gateway
+     * fronting the whole subsystem is the worst place to add one.</p>
+     *
+     * <p>This <strong>keeps</strong> the trade above rather than reopening it: {@code BlockingOperationError} and
+     * {@code NoClassDefFoundError} are {@code Error}s but <em>not</em> {@code VirtualMachineError}s, so they are still
+     * caught and a write still survives them.</p>
+     *
+     * <p>⚠ One known over-reach, recorded rather than smoothed over: {@link StackOverflowError} is also a
+     * {@code VirtualMachineError} and, unlike the others, is usually <em>recoverable</em> — the stack unwinds and the
+     * thread is fine — so rethrowing it fails a write for a condition that did not need to. It is accepted because it
+     * is unreachable on this path: everything that runs here on the calling thread builds a two-entry
+     * {@code LinkedHashMap} and walks it twice, with no recursion and no serialization (the envelope and the send moved
+     * to the sender thread). Narrowing the rethrow to {@code OutOfMemoryError} was the alternative and was declined —
+     * {@code InternalError} and {@code UnknownError} carry exactly the same false reassurance, and enumerating the
+     * unrecoverable subtypes is the list that goes stale.</p>
      */
     private void publish(String entityType, String entityId, EntityChangeAction action) {
         try {
             publisher.publish(entityType, entityId, action, null);
+        } catch (VirtualMachineError e) {
+            // The JVM is unrecoverable. Swallowing this would log a reassurance we cannot honour. Let it go up.
+            throw e;
         } catch (Throwable e) {
             LOG.warn("Could not publish the {} of a {} — the record is unaffected", action, entityType, e);
         }
