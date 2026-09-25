@@ -163,25 +163,42 @@ class EntityEventPublisherTest {
     }
 
     /**
-     * The actor is carried explicitly as null, never omitted.
+     * ⛔ The actor key is OMITTED when there is no actor, not sent as an explicit null.
      *
-     * <p>The api's design decision, preserved so a consumer can tell <em>no actor</em> from <em>this producer stopped
-     * sending the field</em>. In this gateway the actor is always null — the reactive security context does not reach a
-     * Mongo lifecycle listener — so this is the shape of every frame it publishes, not an edge case.</p>
+     * <p>hc-admin item 129, decided 2026-09-24: omit the key everywhere. In this gateway the actor is <em>always</em>
+     * unresolvable, so this is the shape of <strong>every</strong> frame it publishes rather than an edge case — which
+     * is exactly why emitting the retired shape here would have mattered.</p>
+     *
+     * <p>Asserted on the serialized frame as well as the map, because those are two different facts: a map without the
+     * key and a map with a null value can both look like "no actor" to a Java assertion and are distinguishable on the
+     * wire.</p>
      */
     @Test
-    void theActorKeyIsPresentAndNullRatherThanAbsent() throws InterruptedException {
+    void theActorKeyIsOmittedWhenThereIsNoActor() throws InterruptedException {
         EntityEvent event = publishAndCapture("User", ENTITY_ID, EntityChangeAction.UPDATED, null);
 
-        assertThat(event.data()).containsKey(EntityEvent.ACTOR_ACCOUNT_ID);
-        assertThat(event.data().get(EntityEvent.ACTOR_ACCOUNT_ID)).isNull();
+        assertThat(event.data()).doesNotContainKey(EntityEvent.ACTOR_ACCOUNT_ID);
+        assertThat(event.data()).containsOnlyKeys(EntityEvent.ACTION);
 
         ObjectMapper om = new ObjectMapper();
         JsonNode data = om.readTree(om.writeValueAsString(event)).path("data");
         assertThat(data.has(EntityEvent.ACTOR_ACCOUNT_ID))
-            .as("an omitted key and an explicit null are different facts on the wire")
-            .isTrue();
-        assertThat(data.path(EntityEvent.ACTOR_ACCOUNT_ID).isNull()).isTrue();
+            .as("item 129 retires the explicit null; the key must be absent from the wire, not present and null")
+            .isFalse();
+    }
+
+    /**
+     * And when an actor IS supplied, the key is present and carries it.
+     *
+     * <p>No call site supplies one today — {@code EntityChangeCallback} always passes null — but the parameter exists
+     * and omission must be a property of <em>a null actor</em> rather than of this publisher never sending the key.
+     * Without this, deleting the {@code data.put} entirely would still pass.</p>
+     */
+    @Test
+    void theActorKeyIsPresentWhenThereIsAnActor() throws InterruptedException {
+        EntityEvent event = publishAndCapture("User", ENTITY_ID, EntityChangeAction.UPDATED, "68c1f0a2b3c4d5e6f7a8b9c1");
+
+        assertThat(event.data()).containsEntry(EntityEvent.ACTOR_ACCOUNT_ID, "68c1f0a2b3c4d5e6f7a8b9c1");
     }
 
     /**

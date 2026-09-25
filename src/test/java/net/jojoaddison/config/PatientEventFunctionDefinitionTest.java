@@ -43,6 +43,10 @@ class PatientEventFunctionDefinitionTest {
     private static final String MAIL_ROUTER = "patientEventsConsumer";
     private static final String BINDING = "patientEventsConsumer-in-0";
 
+    /** Item 45's producer. Kept as a literal rather than read from {@code EntityEventPublisher.BINDING}: this test's
+     * job is to catch the two drifting apart, and sourcing both sides from one constant cannot. */
+    private static final String ENTITY_BINDING = "entityEvents-out-0";
+
     @Test
     void theMailRouterIsNamedInBothFilesOrItNeverBinds() {
         // The @Bean method name is the function name, and this property is the only thing that binds
@@ -85,6 +89,56 @@ class PatientEventFunctionDefinitionTest {
         }
     }
 
+    /**
+     * That the entity-change producer points at {@code patient.event} in <b>both</b> files — backlog item 45.
+     *
+     * <h2>⛔ Why this cannot live in {@code EntityEventBindingIT}, which is where it looks like it belongs</h2>
+     *
+     * <p>Because an {@code @IntegrationTest} injecting {@code BindingServiceProperties} reads a context built
+     * <em>only</em> from {@code src/test/resources/config/application.yml}. It cannot see the main file at all.
+     * <strong>Measured 2026-09-25: deleting the whole {@code entityEvents-out-0} block from the MAIN file leaves the
+     * entire suite green</strong>, that IT included, 4/4 and BUILD SUCCESS — while production publishes to a topic
+     * nobody reads.</p>
+     *
+     * <p>And it is silent on every layer, which is why it needs a test rather than care. {@code StreamBridge} invents a
+     * destination named after the binding for a binding with no {@code destination}, so {@code send()} returns
+     * <b>true</b> and {@code EntityEventPublisher}'s {@code if (!sent)} warning never fires. Frames land on a topic
+     * called {@code entityEvents-out-0}, {@code patient.event} stays empty, and hc-admin's erasure fact is missing
+     * again — the exact defect item 45 exists to fix. It is the api's item 32 shape, and this repository's own
+     * deleted-scaffold {@code /publish} endpoint did the same thing for as long as it existed.</p>
+     */
+    @Test
+    void theEntityChangeProducerPointsAtPatientEventInBothFiles() {
+        for (Path file : List.of(MAIN, TEST)) {
+            assertThat(binding(file, ENTITY_BINDING))
+                .as("%s: the entity-change stream's binding. A destination in one file only is a production-only topic", file)
+                .containsEntry("destination", "patient.event");
+        }
+    }
+
+    /**
+     * That the key configuration is in both files too — the half that fails at send time rather than at startup.
+     *
+     * <p>{@code messageKeyExpression} yields a String and the binder's default key serializer is
+     * {@code ByteArraySerializer}; the mismatch throws when a frame is sent, not when the context starts. In this
+     * publisher that is doubly buried — the send is swallowed by design and happens on a thread of its own — so a
+     * serializer configured in the test file alone would lose every frame in production with a green suite. This
+     * repository has already paid for that once on the binding next door.</p>
+     */
+    @Test
+    void theEntityChangeProducerIsKeyedAndSerializedInBothFiles() {
+        for (Path file : List.of(MAIN, TEST)) {
+            Map<String, Object> producer = child(kafkaBinding(file, ENTITY_BINDING), "producer");
+
+            assertThat(String.valueOf(producer.get("messageKeyExpression")))
+                .as("%s: one document's changes must share a partition, or a create and a delete can be audited out of order", file)
+                .contains("entityKey");
+            assertThat(child(producer, "configuration"))
+                .as("%s: a String key needs StringSerializer, or every frame is lost at send time", file)
+                .containsEntry("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+        }
+    }
+
     /** A parser that silently matches nothing passes for ever. */
     @Test
     void theSweepFindsWhatItIsChecking() {
@@ -92,11 +146,29 @@ class PatientEventFunctionDefinitionTest {
         assertThat(names(TEST)).isNotEmpty();
         assertThat(binding(MAIN, BINDING)).isNotEmpty();
         assertThat(binding(TEST, BINDING)).isNotEmpty();
+        // Item 45's two additions need their own positive control: `binding` and `kafkaBinding` walk different key
+        // paths, and a typo in either would return an empty map that `containsEntry` reports as a missing destination
+        // rather than as a broken reader.
+        assertThat(binding(MAIN, ENTITY_BINDING)).isNotEmpty();
+        assertThat(binding(TEST, ENTITY_BINDING)).isNotEmpty();
+        assertThat(kafkaBinding(MAIN, ENTITY_BINDING)).isNotEmpty();
+        assertThat(kafkaBinding(TEST, ENTITY_BINDING)).isNotEmpty();
     }
 
     /** {@code spring.cloud.stream.bindings.<name>} */
     private static Map<String, Object> binding(Path file, String name) {
         return child(path(file, "spring", "cloud", "stream", "bindings"), name);
+    }
+
+    /**
+     * {@code spring.cloud.stream.kafka.bindings.<name>} — a different subtree from {@link #binding}.
+     *
+     * <p>The destination lives under {@code stream.bindings}; the key expression and serializer live under
+     * {@code stream.kafka.bindings}. Two paths, both required, and a binding configured in one and not the other is
+     * the failure this file exists for.</p>
+     */
+    private static Map<String, Object> kafkaBinding(Path file, String name) {
+        return child(path(file, "spring", "cloud", "stream", "kafka", "bindings"), name);
     }
 
     /** The definition split on {@code ;} into whole function names. */

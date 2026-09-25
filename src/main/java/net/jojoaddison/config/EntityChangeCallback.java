@@ -102,6 +102,18 @@ public class EntityChangeCallback extends AbstractMongoEventListener<Object> {
      *
      * <p>Identity-based and <strong>synchronized rather than thread-confined</strong>, because the two events arrive on
      * different threads in this application. See the class javadoc for the measurement.</p>
+     *
+     * <p><strong>The leak has a named, ordinary trigger, not just "a save that throws".</strong>
+     * {@code ValidatingMongoEventListener} ({@link DatabaseConfiguration}) raises at {@code BeforeSaveEvent} — which
+     * falls <em>between</em> the two events here — so <strong>every bean-validation rejection leaks exactly one
+     * entry</strong>. A registration with an over-long name does it. That is a slow drip bounded by the cap below,
+     * not a hazard, but it is a normal path rather than an exceptional one and the cap should be read in that light.</p>
+     *
+     * <p>⚠ <strong>Identity keying assumes the saved object is the same instance at both events.</strong> It is, for a
+     * mutable class like {@code User}. A future domain type declared as a {@code record} would break that — Spring Data
+     * returns a new instance for an immutable entity — so every insert would be reported {@code UPDATED} and every
+     * entry would leak. It fails noisily (the cap's WARN, and {@code EntityChangeCallbackIT}'s {@code CREATED}
+     * assertion) rather than silently, which is the better direction, but it is worth knowing before adding one.</p>
      */
     private static final Set<Object> PENDING_INSERTS = Collections.synchronizedSet(Collections.newSetFromMap(new IdentityHashMap<>()));
 
@@ -139,9 +151,18 @@ public class EntityChangeCallback extends AbstractMongoEventListener<Object> {
         }
         synchronized (PENDING_INSERTS) {
             if (PENDING_INSERTS.size() >= PENDING_INSERTS_CAP) {
-                // Only reachable when saves have been failing between the two events. Worth a line, because the visible
-                // symptom otherwise is inserts quietly reported as updates once the cap is hit.
-                LOG.warn("Clearing {} unresolved pending inserts — some saves did not complete", PENDING_INSERTS.size());
+                // Reached when saves have been failing between BeforeConvertEvent and AfterSaveEvent — most often a
+                // bean-validation rejection, which raises at BeforeSaveEvent, between the two. See the field javadoc.
+                //
+                // ⚠ The clear is indiscriminate and the message says so: entries mid-save are dropped along with the
+                // leaked ones, and each of those then publishes UPDATED for what was really an insert. That is the
+                // trade — a bounded set that occasionally mislabels, against an unbounded one that never forgets a
+                // failed write. The message must not claim these are all unresolved; it cannot tell which are.
+                LOG.warn(
+                    "Clearing all {} pending inserts to stay bounded — some are leaked, some may be saves still in flight, " +
+                    "and those will be reported as UPDATED rather than CREATED",
+                    PENDING_INSERTS.size()
+                );
                 PENDING_INSERTS.clear();
             }
             PENDING_INSERTS.add(source);
@@ -186,12 +207,29 @@ public class EntityChangeCallback extends AbstractMongoEventListener<Object> {
      *
      * <p>The actor is passed as {@code null} unconditionally and that is the measured answer rather than a placeholder:
      * the reactive security context does not reach a Mongo lifecycle listener. {@link EntityEventPublisher}'s javadoc
-     * carries the probe and what a later change would have to add.</p>
+     * carries the probe, the decision to omit the key rather than send a null, and what a later change would have to
+     * add.</p>
+     *
+     * <h2>⛔ Why this catches {@link Throwable} and not {@link RuntimeException}</h2>
+     *
+     * <p>Because an {@link Error} raised on this path <strong>kills the write</strong>, and that was measured rather
+     * than imagined. A blocking call planted at the top of {@code publish} raised BlockHound's
+     * {@code BlockingOperationError} — an {@code Error}, not an exception — which sailed through a
+     * {@code catch (RuntimeException)}, propagated into the save pipeline and failed
+     * {@code userRepository.save(...)} itself. A publisher had become the reason a registration failed, which is the
+     * one thing every javadoc in this package promises cannot happen.</p>
+     *
+     * <p>⚠ <strong>The cost, stated because it is real:</strong> BlockHound's error is now swallowed here too, so a
+     * future blocking call added to the publish path no longer fails a test by killing the save. It is not thereby
+     * invisible — the frame is never sent, so {@code ErasureEntityEventIT} goes red on a missing frame instead. That is
+     * a worse diagnostic and a better failure mode: the symptom lands on the publishing path that caused it rather than
+     * on a patient's write. (BlockHound is test-scope, so in production the members of this category are
+     * {@code NoClassDefFoundError} and friends, where swallowing is plainly right.)</p>
      */
     private void publish(String entityType, String entityId, EntityChangeAction action) {
         try {
             publisher.publish(entityType, entityId, action, null);
-        } catch (RuntimeException e) {
+        } catch (Throwable e) {
             LOG.warn("Could not publish the {} of a {} — the record is unaffected", action, entityType, e);
         }
     }

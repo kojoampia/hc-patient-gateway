@@ -94,10 +94,15 @@ public record EntityEvent(
     /**
      * Payload key: the gateway {@code User.id} of whoever made the change.
      *
-     * <p>Present on every frame and explicitly {@code null} when this service cannot name the caller, rather than
-     * omitted — one payload shape, so a consumer never has to tell "no actor" from "this producer stopped sending the
-     * field". <strong>In this gateway it is always null</strong>, and {@link EntityEventPublisher} explains why that is
-     * a measured limit of the reactive listener rather than an omission.</p>
+     * <p>⛔ <strong>OMITTED when this service cannot name the caller</strong> — hc-admin item 129, decided 2026-09-24:
+     * omit the key everywhere. In this gateway the actor is <em>always</em> unresolvable, because the reactive security
+     * context does not reach a Mongo lifecycle listener ({@link EntityEventPublisher} carries the measurement), so
+     * <strong>no frame this class publishes carries this key at all</strong> and a payload here is {@code action}
+     * alone.</p>
+     *
+     * <p>⚠ hc-patient's api still emits it as an explicit {@code null}, so a consumer reading {@code patient.event}
+     * sees both shapes until that sweep lands. That is item 129's intermediate state, not a disagreement introduced
+     * here.</p>
      */
     public static final String ACTOR_ACCOUNT_ID = "actorAccountId";
 
@@ -114,6 +119,12 @@ public record EntityEvent(
      *     here must not read as a new entity type there.
      * @param entityId the document's own id. Never null on a published frame — {@link EntityEventPublisher} refuses a
      *     frame that names nothing, because no consumer can turn one into an audit row.
+     *     <p>⚠ <strong>This value is outside both of the publisher's payload guards by construction</strong> — they
+     *     inspect {@code data}, and this is a record component. Harmless for {@code User}, whose id is a generated
+     *     ObjectId that identifies nobody outside this database. It stops being harmless for a future entity with a
+     *     natural {@code @Id} — an email address, an invitation token, a card number — which would reach the wire with
+     *     every test green and no guard consulted. Whoever adds such an entity owns that check; there is nothing here
+     *     that will make it for them.</p>
      */
     public record Subject(String entityType, String entityId) {}
 }

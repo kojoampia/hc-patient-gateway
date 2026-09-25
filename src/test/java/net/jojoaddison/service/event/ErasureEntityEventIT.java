@@ -77,9 +77,11 @@ class ErasureEntityEventIT {
             .as("the deactivation that completes an erasure must reach patient.event — hc-admin cannot get it elsewhere")
             .isNotNull();
         assertThat(frame.subject().entityType()).isEqualTo("User");
-        assertThat(frame.data().get(EntityEvent.ACTOR_ACCOUNT_ID))
-            .as("the closer acts on a Kafka frame, so there is no person to name — and the listener could not name one anyway")
-            .isNull();
+        // containsOnlyKeys, not get(...) == null: a map with no such key and a map holding a null both answer null to
+        // get, so the weaker assertion would have stayed green across exactly the item 129 change this pins.
+        assertThat(frame.data())
+            .as("the closer acts on a Kafka frame, so there is no person to name — and item 129 omits the key entirely")
+            .containsOnlyKeys(EntityEvent.ACTION);
 
         assertThat(userRepository.findById(stored.getId()).block().isActivated())
             .as("the erasure must actually have closed the account — deactivated, not deleted (the 2026-08-31 decision)")
@@ -92,9 +94,14 @@ class ErasureEntityEventIT {
      * ⛔ That nothing identifying reaches the wire, asserted on the serialized frame.
      *
      * <p>A {@code User} holds a login, an email, a password hash, an activation key and a reset key — so unlike the api,
-     * whose documents are clinical, this gateway's one published entity <em>is</em> the identifying one. The unit tests
-     * pin the allowlist and the denylist as functions; this pins the outcome, because the two fail differently and
-     * neither subsumes the other: a guard can be perfectly correct and simply never be called.</p>
+     * whose documents are clinical, this gateway's one published entity <em>is</em> the identifying one.</p>
+     *
+     * <p>⚠ <strong>What this does NOT do is check that the publisher's guards are called</strong>, and an earlier
+     * version of this javadoc implied it did. Measured: deleting both {@code assertIdentifiersOnly} and
+     * {@code assertNothingClinical} call sites leaves this test green. It cannot be otherwise — the payload is built
+     * from a closed set of keys two lines above the guards, so it is clean whether or not they run. This asserts the
+     * <em>outcome</em> on a real serialized frame, which is worth having on its own terms; the guards are held to their
+     * contract by {@code EntityEventPublisherTest}, which calls them directly.</p>
      *
      * <p>Every frame for the account is checked, not one of them — the creation and the erasure both have to be clean.</p>
      */
@@ -118,9 +125,11 @@ class ErasureEntityEventIT {
             assertThat(json).as("a password hash must never leave this service").doesNotContain(stored.getPassword());
 
             JsonNode data = objectMapper.readTree(json).path("data");
-            assertThat(data.size()).as("the payload is a closed shape: the action and the actor, and nothing else, ever").isEqualTo(2);
+            // The action alone: this gateway can never name an actor, and hc-admin item 129 retires the explicit null
+            // rather than carrying an always-null key. A closed shape of exactly one field.
+            assertThat(data.size()).as("the payload is a closed shape — the action, and nothing else, ever").isEqualTo(1);
             assertThat(data.has(EntityEvent.ACTION)).isTrue();
-            assertThat(data.has(EntityEvent.ACTOR_ACCOUNT_ID)).isTrue();
+            assertThat(data.has(EntityEvent.ACTOR_ACCOUNT_ID)).as("item 129: omit the key, do not send it as null").isFalse();
         }
 
         userRepository.deleteById(stored.getId()).block();

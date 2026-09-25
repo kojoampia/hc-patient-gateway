@@ -21,12 +21,18 @@ import org.springframework.core.env.Environment;
  * contract: hc-admin's consumer will name this string, and a misspelling here is a real topic that is silent on both
  * sides at once. An internal name could be derived; a name another product depends on earns an enumeration.</p>
  *
- * <p>⚠ <strong>It asserts against the TEST configuration, which in this repository REPLACES
- * {@code src/main/resources/config/application.yml} wholesale rather than merging with it.</strong> So the two files
- * carrying the same binding is itself part of what is being checked — this repo's guide records three separate defects
- * from that trap, each with a green suite, and the api's item 32 shipped an inert deployed consumer through it. Had the
- * binding been added only to the main file, this test would still have passed, against a destination named
- * {@code entityEvents-out-0}.</p>
+ * <p>⛔ <strong>This test sees the TEST configuration and nothing else, and an earlier version of this javadoc claimed
+ * otherwise.</strong> It said "the two files carrying the same binding is itself part of what is being checked". It is
+ * not: {@code BindingServiceProperties} comes from a context built only from
+ * {@code src/test/resources/config/application.yml}, which <em>replaces</em> the main file on the classpath rather than
+ * merging with it. Deleting the binding from the MAIN file leaves this test green — measured, 4/4 — while production
+ * publishes to a topic nobody reads.</p>
+ *
+ * <p><strong>{@code PatientEventFunctionDefinitionTest} owns that half</strong>, reading both files off disk with
+ * SnakeYAML, and its {@code theEntityChangeProducerPointsAtPatientEventInBothFiles} is the assertion that goes red for
+ * a main-file deletion. What <em>this</em> file is good for is the running context's own view: that the binding the
+ * code names resolves, in the configuration a test actually loads — the harmless direction, and still worth having,
+ * because a binding name typo'd in Java rather than in YAML shows up here first.</p>
  */
 @IntegrationTest
 class EntityEventBindingIT {

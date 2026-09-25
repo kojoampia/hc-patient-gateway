@@ -69,13 +69,28 @@ import org.springframework.stereotype.Component;
  * {@code DELETION_REQUEST_CHANGED} frame, so the actor genuinely is not a person — it is this gateway reacting to a
  * message. A perfect actor implementation would report null for that write too.</p>
  *
- * <p>⛔ <strong>It is carried explicitly, never omitted</strong> — the api's design decision, preserved here, so a
- * consumer can tell <em>no actor</em> from <em>this producer stopped sending the field</em>. A future change that wanted
- * a real actor would need one of: an id claim on the JWT (item 56, which touches a token three products validate
- * against a shared key), or an actor threaded explicitly from each service call site into the publisher — which is the
- * shape the listener exists to avoid, because it covers the writes somebody remembered. Do not attempt it by enabling
- * {@code Hooks.enableAutomaticContextPropagation()}: that changes operator behaviour across a gateway that routes an
- * entire subsystem, and it would still yield a login rather than an id.</p>
+ * <h2>⛔ The actor key is OMITTED when there is no actor — hc-admin item 129, decided 2026-09-24</h2>
+ *
+ * <p>Not carried as an explicit {@code null}. The estate considered both and settled on omission everywhere, against
+ * the recommendation that was put to the architect; <strong>this is compliance with a decision already taken, not a
+ * position this class argues.</strong> An earlier draft of this file argued the explicit-null case at length, because
+ * the brief it was written from predated the decision landing — that argument is deleted rather than left standing,
+ * since a javadoc arguing a settled question reads as a live disagreement to the next person.</p>
+ *
+ * <p>Two consequences are specific to this producer and worth stating. Because the actor here is <em>always</em>
+ * unresolvable, <strong>100% of this gateway's frames carry only {@code action}</strong> — this is not a producer with
+ * an occasional gap. And item 129's migration is "tolerate both shapes until the last producer lands": new code
+ * emitting the retired shape would have added to that queue rather than drained it.</p>
+ *
+ * <p>⚠ <strong>hc-patient's api still sends the explicit null</strong>, so for now the two halves of this one product
+ * disagree about one key on one topic. That is item 129's known intermediate state rather than something introduced
+ * here; the api's sweep is the other half of it, and a consumer must tolerate both until that lands.</p>
+ *
+ * <p>A future change that wanted a real actor would need one of: an id claim on the JWT (item 56, which touches a token
+ * three products validate against a shared key), or an actor threaded explicitly from each service call site into the
+ * publisher — which is the shape the listener exists to avoid, because it covers the writes somebody remembered. Do not
+ * attempt it by enabling {@code Hooks.enableAutomaticContextPropagation()}: that changes operator behaviour across a
+ * gateway that routes an entire subsystem, and it would still yield a login rather than an id.</p>
  *
  * <h2>⚠ Nothing here may run on the calling thread, and in this gateway that thread is the Mongo driver's</h2>
  *
@@ -264,8 +279,8 @@ public class EntityEventPublisher {
      *     {@link EntityEvent.Subject}.
      * @param action what happened. Carried in {@code data}.
      * @param actorAccountId the gateway {@code User.id} of whoever made the change, or null when this service cannot
-     *     name them — which in this gateway is <strong>always</strong>, for the reasons in the class javadoc. Carried in
-     *     {@code data} explicitly, null and all. Null is a legitimate frame, unlike a null entity id.
+     *     name them — which in this gateway is <strong>always</strong>, for the reasons in the class javadoc. A null
+     *     <strong>omits the key</strong> (hc-admin item 129); it does not refuse the frame, unlike a null entity id.
      */
     public void publish(String entityType, String entityId, EntityChangeAction action, String actorAccountId) {
         if (entityType == null || entityType.isBlank() || entityId == null || entityId.isBlank() || action == null) {
@@ -275,29 +290,43 @@ public class EntityEventPublisher {
             return;
         }
 
-        // LinkedHashMap rather than Map.of so the payload serializes in the order it is written here, and because
-        // Map.of refuses a null value, which an unnameable actor is. Map.of's iteration order is randomised per JVM.
+        // LinkedHashMap rather than Map.of so the payload serializes in the order it is written here, which is the
+        // order a reader of the topic wants. Map.of's iteration order is randomised per JVM.
         Map<String, Object> data = new LinkedHashMap<>();
         data.put(EntityEvent.ACTION, action.name());
-        // Put unconditionally, null and all, so the payload has one shape rather than two.
-        data.put(EntityEvent.ACTOR_ACCOUNT_ID, actorAccountId);
+        // ⛔ OMITTED when there is no actor — hc-admin item 129, decided 2026-09-24. See EntityEvent.ACTOR_ACCOUNT_ID.
+        if (actorAccountId != null) {
+            data.put(EntityEvent.ACTOR_ACCOUNT_ID, actorAccountId);
+        }
+        // Both guards run HERE, on the calling thread, and both are pure CPU — no allocation that can block, nothing
+        // that touches SecureRandom. That is what makes it safe to leave them on a Mongo driver event loop; the two
+        // lines that are not safe there moved into the lambda below.
         assertIdentifiersOnly(data);
         // Defence in depth, and a different failure: the denylist catches a forbidden key that somehow reached a
         // payload, the allowlist catches any key that is not one of the two. Neither subsumes the other.
         assertNothingClinical(data);
 
-        EntityEvent event = new EntityEvent(
-            UUID.randomUUID().toString(),
-            EntityEvent.TYPE,
-            EntityEvent.VERSION,
-            Instant.now(),
-            SOURCE,
-            new EntityEvent.Subject(entityType, entityId),
-            data
-        );
-
         try {
-            sender.execute(() -> send(event, entityId));
+            // ⚠ The ENVELOPE IS BUILT ON THE SENDER THREAD, not here, and that is a correction of 2026-09-25 rather
+            // than a preference. UUID.randomUUID() draws on SecureRandom and can block, and Instant.now() is a clock
+            // read — on the calling thread that is a blocking call on the MongoDB driver's IO event loop. The sibling
+            // PatientEventPublisher already learned this (its javadoc: "BlockHound caught exactly that here") and moved
+            // its whole envelope onto its worker; the api's version of this class builds on the request thread, which
+            // is safe there and is NOT safe here. Measured: a blocking call at the top of this method raised
+            // BlockingOperationError on multiThreadIoEventLoopGroup and killed the save it was merely describing.
+            // `data` is not touched after this point, and execute() establishes a happens-before, so the hand-off is safe.
+            sender.execute(() -> {
+                EntityEvent event = new EntityEvent(
+                    UUID.randomUUID().toString(),
+                    EntityEvent.TYPE,
+                    EntityEvent.VERSION,
+                    Instant.now(),
+                    SOURCE,
+                    new EntityEvent.Subject(entityType, entityId),
+                    data
+                );
+                send(event, entityId);
+            });
         } catch (RejectedExecutionException e) {
             // The queue is full, which means the broker is not draining it. Dropping is the design; see the class
             // javadoc on why this must never become CallerRunsPolicy. Counted as well as logged — a run of drops must
@@ -325,9 +354,15 @@ public class EntityEventPublisher {
      * Refuses a payload carrying anything but the action and the actor.
      *
      * <p>Throws rather than stripping: a dropped key would let the caller believe a field is being published, and the
-     * next person to read the consumer would wonder why it never arrives. It throws on the <em>calling</em> thread,
-     * which is deliberate — this is a programming error rather than a runtime condition, and it should surface in the
-     * test that introduced it rather than as a log line on a background thread.</p>
+     * next person to read the consumer would wonder why it never arrives.</p>
+     *
+     * <p>⚠ <strong>It is a tripwire for a future edit to {@link #publish}, and nothing more — say so rather than
+     * implying coverage it does not have.</strong> On the only path that exists today the payload is built two lines
+     * above it from a closed set of keys, so this can never fire: deleting both guard calls leaves every integration
+     * test green, measured 2026-09-25. What guards them is {@code EntityEventPublisherTest}, which calls them directly.
+     * An earlier version of this javadoc said the throw "should surface in the test that introduced it" — <strong>it
+     * would not.</strong> It throws on the calling thread, where {@code EntityChangeCallback.publish} catches it and
+     * turns it into a log line, so a violation reaches an operator's log rather than a red build.</p>
      */
     static void assertIdentifiersOnly(Map<String, Object> data) {
         for (String key : data.keySet()) {
@@ -345,7 +380,8 @@ public class EntityEventPublisher {
      * Refuses a payload carrying identifying or clinical content, by name.
      *
      * <p>The denylist half. See {@link #FORBIDDEN_KEYS} for why this gateway needed its own copy of a rule the api
-     * already had.</p>
+     * already had. Like {@link #assertIdentifiersOnly}, it is a tripwire for a future edit rather than a guard that can
+     * fire today, and {@code EntityEventPublisherTest} is what holds it to its contract.</p>
      */
     static void assertNothingClinical(Map<String, Object> data) {
         for (String key : data.keySet()) {

@@ -116,6 +116,11 @@ class EntityChangeCallbackIT {
      * <p>The reactive security context is not visible inside a Mongo lifecycle listener — probed 2026-09-25, empty 15
      * times out of 15, including for a save wrapped in {@code contextWrite(withAuthentication(...))}. Pinned so that a
      * later change claiming to resolve an actor has to prove it here rather than in prose.</p>
+     *
+     * <p>This pins the <em>call</em>: the listener hands {@code null} to the publisher. What the wire then carries is a
+     * separate question with a separate answer — the key is omitted rather than sent as null (hc-admin item 129) — and
+     * it is pinned in {@code EntityEventPublisherTest} and {@code ErasureEntityEventIT}, where a serialized frame
+     * exists to look at.</p>
      */
     @Test
     void everyFrameFromTheListenerCarriesANullActor() {
