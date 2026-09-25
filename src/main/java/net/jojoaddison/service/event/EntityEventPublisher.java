@@ -307,20 +307,37 @@ public class EntityEventPublisher {
         assertNothingClinical(data);
 
         try {
-            // ⚠ The ENVELOPE IS BUILT ON THE SENDER THREAD, not here, and that is a correction of 2026-09-25 rather
-            // than a preference. UUID.randomUUID() draws on SecureRandom and can block, and Instant.now() is a clock
-            // read — on the calling thread that is a blocking call on the MongoDB driver's IO event loop. The sibling
-            // PatientEventPublisher already learned this (its javadoc: "BlockHound caught exactly that here") and moved
-            // its whole envelope onto its worker; the api's version of this class builds on the request thread, which
-            // is safe there and is NOT safe here. Measured: a blocking call at the top of this method raised
-            // BlockingOperationError on multiThreadIoEventLoopGroup and killed the save it was merely describing.
+            // ⚠ UUID.randomUUID() IS BUILT ON THE SENDER THREAD and occurredAt IS NOT — the split is the point, and
+            // getting it wrong in either direction has a cost.
+            //
+            // UUID.randomUUID() draws on SecureRandom and can block, so it may not run on the calling thread: here
+            // that thread is the MongoDB driver's IO event loop, and BlockHound is watching it. Measured — a
+            // Thread.sleep(2) planted at the top of this method raised BlockingOperationError on
+            // multiThreadIoEventLoopGroup, four times. The sibling PatientEventPublisher already learned this ("BlockHound
+            // caught exactly that here"); the api's version of this class builds its whole envelope on the request
+            // thread, which is safe there and is not safe here.
+            //
+            // ⛔ Instant.now() STAYS ON THE CALLER, and an earlier version of this comment claimed it could not. That
+            // claim was false and the correction was measured with a positive control: moving only Instant.now() back
+            // here, with UUID.randomUUID() left in the lambda, ran EntityChangeCallbackIT + ErasureEntityEventIT 7/7
+            // green with zero BlockingOperationError — on the same thread that produced four of them under the sleep
+            // probe, so BlockHound was demonstrably watching and had nothing to report. It is a
+            // System.currentTimeMillis()-class read and is not in BlockHound's blocking set.
+            //
+            // It matters because occurredAt is the "when" of somebody's audit row. Stamped inside the lambda it becomes
+            // the time the sender DEQUEUED, which is microseconds later in health and up to a minute later in exactly
+            // the scenario this class's javadoc documents: StreamBridge's first send is bounded at 60s against an absent
+            // broker and the queue is 512 deep, so a cold start behind a slow broker would stamp a minute of changes
+            // with one clustered timestamp — wrong precisely when somebody is reading the trail. Ordering is unaffected
+            // either way (one sender thread, FIFO); this is accuracy, not sequence.
+            Instant occurredAt = Instant.now();
             // `data` is not touched after this point, and execute() establishes a happens-before, so the hand-off is safe.
             sender.execute(() -> {
                 EntityEvent event = new EntityEvent(
                     UUID.randomUUID().toString(),
                     EntityEvent.TYPE,
                     EntityEvent.VERSION,
-                    Instant.now(),
+                    occurredAt,
                     SOURCE,
                     new EntityEvent.Subject(entityType, entityId),
                     data

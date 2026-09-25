@@ -13,11 +13,15 @@ import static org.mockito.Mockito.verify;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -244,6 +248,60 @@ class EntityEventPublisherTest {
 
         assertThat(sent.await(5, TimeUnit.SECONDS)).isTrue();
         assertThat(captured.get().getHeaders().get(EntityEventPublisher.KEY_HEADER)).isEqualTo(ENTITY_ID);
+    }
+
+    /**
+     * ⛔ {@code occurredAt} is the moment of the CHANGE, not the moment of the send.
+     *
+     * <p>{@code occurredAt} is the "when" of somebody's audit row, and it is the one envelope component whose value
+     * depends on <em>which thread stamps it</em>. Built inside the sender's lambda it becomes the time the queue was
+     * drained — microseconds late in health, and up to a minute late in the scenario the class javadoc documents:
+     * {@code StreamBridge}'s first send is bounded at 60s against an absent broker and the queue is 512 deep, so a cold
+     * start behind a slow broker would stamp a minute of changes with one clustered timestamp. Wrong exactly when
+     * somebody is reading the trail.</p>
+     *
+     * <p><strong>The delay is the anchor.</strong> The sender is a single thread, so holding it inside {@code send}
+     * parks the second frame in the queue for half a second — three orders of magnitude more than the microseconds that
+     * separate {@code before} from {@code after}. A stamp taken on the sender thread lands far outside that window and
+     * cannot drift into it; no real clock satisfies both readings.</p>
+     */
+    @Test
+    void occurredAtIsTheMomentOfTheChangeNotTheMomentOfTheSend() throws InterruptedException {
+        StreamBridge bridge = mock(StreamBridge.class);
+        CountDownLatch gate = new CountDownLatch(1);
+        CountDownLatch secondSent = new CountDownLatch(1);
+        List<Message<?>> captured = new CopyOnWriteArrayList<>();
+        AtomicInteger calls = new AtomicInteger();
+        doAnswer(invocation -> {
+            if (calls.getAndIncrement() == 0) {
+                // Occupies the one sender thread, so the next frame waits in the queue rather than being sent.
+                gate.await(10, TimeUnit.SECONDS);
+            } else {
+                captured.add(invocation.getArgument(1));
+                secondSent.countDown();
+            }
+            return true;
+        })
+            .when(bridge)
+            .send(anyString(), any(Message.class));
+
+        EntityEventPublisher publisher = publisher(bridge);
+        publisher.publish("User", "first-frame-holds-the-sender", EntityChangeAction.UPDATED, null);
+        Thread.sleep(200); // let the sender pick that up and park on the gate
+
+        Instant before = Instant.now();
+        publisher.publish("User", ENTITY_ID, EntityChangeAction.UPDATED, null);
+        Instant after = Instant.now();
+
+        Thread.sleep(500); // the frame is queued and demonstrably not yet sent
+        gate.countDown();
+
+        assertThat(secondSent.await(10, TimeUnit.SECONDS)).as("the queued frame was never sent").isTrue();
+        EntityEvent event = (EntityEvent) captured.get(0).getPayload();
+
+        assertThat(event.occurredAt())
+            .as("occurredAt must be stamped when publish was called, not when the sender drained the queue")
+            .isBetween(before, after);
     }
 
     /** A broken broker must not reach the write that provoked the frame. */

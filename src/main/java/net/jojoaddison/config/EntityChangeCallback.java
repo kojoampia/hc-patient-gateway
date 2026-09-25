@@ -240,12 +240,28 @@ public class EntityChangeCallback extends AbstractMongoEventListener<Object> {
      *
      * <p>⚠ One known over-reach, recorded rather than smoothed over: {@link StackOverflowError} is also a
      * {@code VirtualMachineError} and, unlike the others, is usually <em>recoverable</em> — the stack unwinds and the
-     * thread is fine — so rethrowing it fails a write for a condition that did not need to. It is accepted because it
-     * is unreachable on this path: everything that runs here on the calling thread builds a two-entry
-     * {@code LinkedHashMap} and walks it twice, with no recursion and no serialization (the envelope and the send moved
-     * to the sender thread). Narrowing the rethrow to {@code OutOfMemoryError} was the alternative and was declined —
-     * {@code InternalError} and {@code UnknownError} carry exactly the same false reassurance, and enumerating the
-     * unrecoverable subtypes is the list that goes stale.</p>
+     * thread is fine — so rethrowing it fails a write for a condition that did not need to.</p>
+     *
+     * <p><strong>It is accepted for a reason that does not depend on reachability, because a reachability argument
+     * would not survive scrutiny.</strong> Swallowing a {@code StackOverflowError} is not the safe direction either:
+     * the handler below needs stack of its own to run — {@code LOG.warn} with a throwable drives Logback's whole
+     * appender chain, which is the deepest thing on this thread — so it can simply re-trip, and a write continuing on
+     * a near-exhausted stack will very likely blow again in the driver's continuation, outside any catch at all. The
+     * two branches differ little in outcome, and the rethrow is the one that <em>surfaces</em> the condition instead of
+     * reporting it as handled.</p>
+     *
+     * <p>⛔ <strong>Do not restate this as "a StackOverflowError is unreachable here" — an earlier draft did, and it
+     * was wrong.</strong> An SOE does not need the frame that trips it to be recursive; it fires when the stack is
+     * <em>already</em> near exhaustion and the victim can be arbitrary and shallow. This listener runs mid-pipeline
+     * under Netty, the reactive Mongo driver, a Reactor operator chain and
+     * {@code SimpleApplicationEventMulticaster}. The accurate claim is the narrower one: <em>nothing on this path
+     * recurses</em> — the guarded call builds a one-entry {@code LinkedHashMap} (one, not two: since the actor key is
+     * omitted and this gateway can never name an actor, every payload is {@code action} alone), walks it twice, and
+     * hands off to {@code sender.execute} — so only an already-exhausted stack gets you here.</p>
+     *
+     * <p>Narrowing the rethrow to {@code OutOfMemoryError} was the alternative and was declined: {@code InternalError}
+     * and {@code UnknownError} carry exactly the same false reassurance, and enumerating the unrecoverable subtypes is
+     * the list that goes stale.</p>
      */
     private void publish(String entityType, String entityId, EntityChangeAction action) {
         try {
